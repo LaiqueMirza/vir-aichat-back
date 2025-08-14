@@ -1,0 +1,20 @@
+const express = require('express');
+const chatController = require('../controllers/chatController');
+const router = express.Router();
+
+// Get chat history for an agent
+router.get('/:agentId/chat', chatController.getChatHistory);
+
+// Send a message and get AI response
+router.post('/:agentId/chat', chatController.sendMessage);
+
+// Get conversation summary
+router.get('/:agentId/chat/summary', chatController.getConversationSummary);
+
+// Clear chat history for an agent
+router.delete('/:agentId/chat', chatController.clearChatHistory);
+
+// Get recent chats across all agents (for admin dashboard)
+router.get('/recent', chatController.getRecentChats);
+
+module.exports = router;

@@ -1,0 +1,293 @@
+const { gpt4o, gpt4oMini, calculateCost } = require('../config/openai');
+const embeddingsService = require('./embeddingsService');
+const tokenCounter = require('../utils/tokenCounter');
+const { PromptTemplate } = require('@langchain/core/prompts');
+const { RunnableSequence } = require('@langchain/core/runnables');
+
+// System prompt template for the AI agent
+const systemPromptTemplate = PromptTemplate.fromTemplate(`
+You are an AI assistant for {agentName}. Your role is to help customers by providing accurate, helpful, and professional responses based on the company's knowledge base.
+
+Company Context:
+{agentContext}
+
+Instructions:
+1. Use the provided context to answer questions accurately
+2. If you don't have enough information, politely say so and ask for clarification
+3. Be professional, friendly, and helpful
+4. During the conversation, naturally collect the following lead information when appropriate:
+   - Customer's name
+   - Phone number
+   - Email address
+   - Preferred follow-up date
+5. Don't be pushy about collecting information - let it flow naturally in the conversation
+6. If the customer provides contact information, acknowledge it and confirm the details
+
+Relevant Context:
+{context}
+
+Chat History:
+{chatHistory}
+
+Current Question: {question}
+
+Please provide a helpful response:
+`);
+
+// Lead extraction prompt
+const leadExtractionPrompt = PromptTemplate.fromTemplate(`
+Analyze the following conversation and extract any lead information that was provided by the customer.
+
+Conversation:
+{conversation}
+
+Extract the following information if mentioned:
+- Name: (customer's full name)
+- Phone: (phone number in any format)
+- Email: (email address)
+- Follow-up Date: (any mentioned date for follow-up)
+
+Return the information in JSON format. If any field is not mentioned, use null.
+Example: {"name": "John Doe", "phone": "+1234567890", "email": "john@example.com", "followUp": "2024-01-15"}
+
+Lead Information:
+    `);
+
+// Generate AI response using RAG
+const generateResponse = async (agentId, agentName, agentContext, question, chatHistory = []) => {
+    try {
+      console.log(`🤖 Generating response for agent: ${agentName}`);
+      
+      // Check if OpenAI is configured
+      if (!gpt4o || !gpt4oMini) {
+        console.warn('⚠️ OpenAI not configured - returning fallback response');
+        return {
+          response: "I'm sorry, but I'm currently unable to process your request as the AI service is not configured. Please contact the administrator.",
+          tokenUsage: {
+            inputTokens: 0,
+            outputTokens: 0,
+            totalTokens: 0
+          },
+          cost: 0,
+          modelUsed: 'none',
+          relevantSources: 0,
+          contextUsed: false
+        };
+      }
+      
+      // Search for relevant content
+      const relevantContent = await embeddingsService.searchRelevantContent(
+        agentId, 
+        question, 
+        5, 
+        0.7
+      );
+      
+      // Prepare context from relevant content
+      const context = relevantContent.length > 0 
+        ? relevantContent.map(item => item.content).join('\n\n')
+        : 'No specific context found in the knowledge base.';
+      
+      // Prepare chat history
+      const formattedChatHistory = chatHistory
+        .slice(-10) // Keep last 10 messages for context
+        .map(msg => `${msg.role}: ${msg.content}`)
+        .join('\n');
+      
+      // Create the prompt
+      const prompt = await this.systemPromptTemplate.format({
+        agentName,
+        agentContext,
+        context,
+        chatHistory: formattedChatHistory,
+        question
+      });
+      
+      // Determine which model to use based on complexity
+      const model = shouldUseGPT4o(question, context) ? gpt4o : gpt4oMini;
+      const modelName = model === gpt4o ? 'gpt-4o' : 'gpt-4o-mini';
+      
+      console.log(`🧠 Using model: ${modelName}`);
+      
+      // Generate response
+      const response = await model.invoke(prompt);
+      
+      // Calculate token usage and cost
+      const tokenUsage = tokenCounter.calculateChatTokenUsage(
+        [{ role: 'system', content: prompt }],
+        response,
+        modelName
+      );
+      
+      const cost = calculateCost(
+        tokenUsage.inputTokens,
+        tokenUsage.outputTokens,
+        modelName
+      );
+      
+      console.log(`💰 Token usage - Input: ${tokenUsage.inputTokens}, Output: ${tokenUsage.outputTokens}, Cost: $${cost.toFixed(6)}`);
+      
+      return {
+        response,
+        tokenUsage,
+        cost,
+        modelUsed: modelName,
+        relevantSources: relevantContent.length,
+        contextUsed: context.length > 0
+      };
+    } catch (error) {
+      console.error('❌ Error generating RAG response:', error.message);
+      throw error;
+    }
+}
+
+// Extract lead information from conversation
+const extractLeadInfo = async (conversation) => {
+    try {
+      console.log('🔍 Extracting lead information from conversation');
+      
+      if (!gpt4oMini) {
+        console.warn('⚠️ OpenAI not configured - skipping lead extraction');
+        return null;
+      }
+      
+      const prompt = await this.leadExtractionPrompt.format({
+        conversation: conversation
+      });
+      
+      const response = await gpt4oMini.invoke([
+        { role: 'system', content: prompt }
+      ]);
+      
+      // Parse the JSON response
+      let leadData;
+      try {
+        leadData = JSON.parse(response.content);
+      } catch (parseError) {
+        console.warn('⚠️ Failed to parse lead extraction response as JSON');
+        return null;
+      }
+      
+      // Clean and validate the extracted data
+      const cleanedData = {
+        name: cleanName(leadData.name),
+        phone: cleanPhone(leadData.phone),
+        email: cleanEmail(leadData.email),
+        followUpDate: cleanDate(leadData.followUp)
+      };
+      
+      // Only return if we have at least name or contact info
+      if (cleanedData.name || cleanedData.phone || cleanedData.email) {
+        console.log('✅ Lead information extracted successfully');
+        return cleanedData;
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('❌ Error extracting lead info:', error.message);
+      return null;
+    }
+}
+
+// Determine if we should use GPT-4o for complex queries
+const shouldUseGPT4o = (question, context) => {
+    const complexityIndicators = [
+      'analyze', 'compare', 'explain in detail', 'complex', 'technical',
+      'calculate', 'recommend', 'strategy', 'detailed analysis'
+    ];
+    
+    const questionLower = question.toLowerCase();
+    const hasComplexityIndicator = complexityIndicators.some(indicator => 
+      questionLower.includes(indicator)
+    );
+    
+    const isLongContext = context.length > 2000;
+    const isLongQuestion = question.length > 200;
+    
+    return hasComplexityIndicator || isLongContext || isLongQuestion;
+  }
+
+// Clean and validate name
+const cleanName = (name) => {
+    if (!name || typeof name !== 'string') return null;
+    const cleaned = name.trim().replace(/[^a-zA-Z\s'-]/g, '');
+    return cleaned.length >= 2 ? cleaned : null;
+}
+
+// Clean and validate phone number
+const cleanPhone = (phone) => {
+    if (!phone || typeof phone !== 'string') return null;
+    const cleaned = phone.replace(/[^\d+()-\s]/g, '').trim();
+    return cleaned.length >= 10 ? cleaned : null;
+}
+
+// Clean and validate email
+const cleanEmail = (email) => {
+    if (!email || typeof email !== 'string') return null;
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const cleaned = email.trim().toLowerCase();
+    return emailRegex.test(cleaned) ? cleaned : null;
+}
+
+// Clean and validate date
+const cleanDate = (date) => {
+    if (!date || typeof date !== 'string') return null;
+    try {
+      const parsedDate = new Date(date);
+      if (isNaN(parsedDate.getTime())) return null;
+      
+      // Only accept future dates
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      if (parsedDate < today) return null;
+      
+      return parsedDate.toISOString().split('T')[0]; // Return YYYY-MM-DD format
+    } catch (error) {
+      return null;
+    }
+}
+
+// Generate a summary of the conversation
+const generateConversationSummary = async (messages) => {
+    try {
+      if (!messages || messages.length === 0) {
+        return 'No conversation to summarize';
+      }
+      
+      if (!gpt4oMini) {
+        console.warn('⚠️ OpenAI not configured - skipping conversation summary');
+        return 'Summary unavailable - AI service not configured';
+      }
+      
+      const conversationText = messages
+        .map(msg => `${msg.role}: ${msg.content}`)
+        .join('\n');
+      
+      const prompt = `Please provide a brief summary of this conversation in 2-3 sentences:
+
+${conversationText}
+
+Summary:`;
+      
+      const response = await gpt4oMini.invoke([
+        { role: 'user', content: prompt }
+      ]);
+      
+      return response.content.trim();
+    } catch (error) {
+      console.error('❌ Error generating conversation summary:', error.message);
+      return 'Unable to generate summary';
+    }
+}
+
+module.exports = {
+  generateResponse,
+  extractLeadInfo,
+  shouldUseGPT4o,
+  cleanName,
+  cleanPhone,
+  cleanEmail,
+  cleanDate,
+  generateConversationSummary
+};
