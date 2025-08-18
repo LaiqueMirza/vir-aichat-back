@@ -2,8 +2,7 @@ const { OpenAI } = require('@langchain/openai');
 const { OpenAIEmbeddings } = require('@langchain/openai');
 
 // Check if OpenAI API key is configured
-const isOpenAIConfigured = process.env.OPENAI_API_KEY && 
-                          process.env.OPENAI_API_KEY !== 'your_openai_api_key_here';
+const isOpenAIConfigured = process.env.OPENAI_API_KEY;
 
 if (!isOpenAIConfigured) {
   console.warn('⚠️ OpenAI API key not configured - AI features will be disabled');

@@ -1,193 +1,268 @@
-const { pool } = require('../config/db');
+const { supabaseClient } = require('../config/supabase');
 const { v4: uuidv4 } = require('uuid');
 
-class Agent {
-  // Create a new agent
-  static async create(name, context) {
-    const client = await pool.connect();
-    try {
-      const id = uuidv4();
-      const query = `
-        INSERT INTO agents (id, name, context)
-        VALUES ($1, $2, $3)
-        RETURNING *
-      `;
-      const result = await client.query(query, [id, name, context]);
-      return result.rows[0];
-    } catch (error) {
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
-
-  // Get all agents
-  static async getAll() {
-    const client = await pool.connect();
-    try {
-      const query = `
-        SELECT a.*, 
-               COUNT(f.id) as file_count,
-               COUNT(c.id) as chat_count,
-               COUNT(l.id) as lead_count
-        FROM agents a
-        LEFT JOIN files f ON a.id = f.agent_id
-        LEFT JOIN chats c ON a.id = c.agent_id
-        LEFT JOIN leads l ON a.id = l.agent_id
-        GROUP BY a.id
-        ORDER BY a.created_at DESC
-      `;
-      const result = await client.query(query);
-      return result.rows;
-    } catch (error) {
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
-
-  // Get agent by ID
-  static async getById(id) {
-    const client = await pool.connect();
-    try {
-      const query = `
-        SELECT a.*, 
-               COUNT(f.id) as file_count,
-               COUNT(c.id) as chat_count,
-               COUNT(l.id) as lead_count
-        FROM agents a
-        LEFT JOIN files f ON a.id = f.agent_id
-        LEFT JOIN chats c ON a.id = c.agent_id
-        LEFT JOIN leads l ON a.id = l.agent_id
-        WHERE a.id = $1
-        GROUP BY a.id
-      `;
-      const result = await client.query(query, [id]);
-      return result.rows[0];
-    } catch (error) {
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
-
-  // Update agent
-  static async update(id, name, context) {
-    const client = await pool.connect();
-    try {
-      const query = `
-        UPDATE agents 
-        SET name = $2, context = $3
-        WHERE id = $1
-        RETURNING *
-      `;
-      const result = await client.query(query, [id, name, context]);
-      return result.rows[0];
-    } catch (error) {
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
-
-  // Delete agent
-  static async delete(id) {
-    const client = await pool.connect();
-    try {
-      const query = 'DELETE FROM agents WHERE id = $1 RETURNING *';
-      const result = await client.query(query, [id]);
-      return result.rows[0];
-    } catch (error) {
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
-
-  // Get agent files
-  static async getFiles(agentId) {
-    const client = await pool.connect();
-    try {
-      const query = `
-        SELECT * FROM files 
-        WHERE agent_id = $1 
-        ORDER BY created_at DESC
-      `;
-      const result = await client.query(query, [agentId]);
-      return result.rows;
-    } catch (error) {
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
-
-  // Get agent chats
-  static async getChats(agentId) {
-    const client = await pool.connect();
-    try {
-      const query = `
-        SELECT c.*, l.name as client_name, l.email as client_email
-        FROM chats c
-        LEFT JOIN leads l ON c.client_id = l.id
-        WHERE c.agent_id = $1
-        ORDER BY c.created_at DESC
-      `;
-      const result = await client.query(query, [agentId]);
-      return result.rows;
-    } catch (error) {
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
-
-  // Get agent leads
-  static async getLeads(agentId) {
-    const client = await pool.connect();
-    try {
-      const query = `
-        SELECT * FROM leads 
-        WHERE agent_id = $1 
-        ORDER BY created_at DESC
-      `;
-      const result = await client.query(query, [agentId]);
-      return result.rows;
-    } catch (error) {
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
-
-  // Get agent cost summary
-  static async getCostSummary(agentId, startDate = null, endDate = null) {
-    const client = await pool.connect();
-    try {
-      let query = `
-        SELECT 
-          COUNT(*) as total_chats,
-          SUM(token_count) as total_tokens,
-          SUM(cost_usd) as total_cost,
-          AVG(cost_usd) as avg_cost_per_chat
-        FROM chats 
-        WHERE agent_id = $1
-      `;
-      const params = [agentId];
-
-      if (startDate && endDate) {
-        query += ` AND created_at BETWEEN $2 AND $3`;
-        params.push(startDate, endDate);
-      }
-
-      const result = await client.query(query, params);
-      return result.rows[0];
-    } catch (error) {
-      throw error;
-    } finally {
-      client.release();
-    }
+// Create a new agent
+const create = async (name, context) => {
+  try {
+    const id = uuidv4();
+    const { data, error } = await supabaseClient
+      .from('agents')
+      .insert([{ id, name, context }])
+      .select()
+      .single();
+      
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    throw error;
   }
 }
 
-module.exports = Agent;
+// Get all agents
+const getAll = async () => {
+  try {
+    // Get all agents
+    const { data: agents, error: agentsError } = await supabaseClient
+      .from('agents')
+      .select('*')
+      .order('created_at', { ascending: false });
+      
+    if (agentsError) throw agentsError;
+    
+    // For each agent, get file count, chat count, and lead count
+    const agentsWithCounts = await Promise.all(agents.map(async (agent) => {
+      // Get file count
+      const { count: fileCount, error: fileError } = await supabaseClient
+        .from('files')
+        .select('id', { count: 'exact', head: true })
+        .eq('agent_id', agent.id);
+        
+      if (fileError) throw fileError;
+      
+      // Get chat count
+      const { count: chatCount, error: chatError } = await supabaseClient
+        .from('chats')
+        .select('id', { count: 'exact', head: true })
+        .eq('agent_id', agent.id);
+        
+      if (chatError) throw chatError;
+      
+      // Get lead count
+      const { count: leadCount, error: leadError } = await supabaseClient
+        .from('leads')
+        .select('id', { count: 'exact', head: true })
+        .eq('agent_id', agent.id);
+        
+      if (leadError) throw leadError;
+      
+      return {
+        ...agent,
+        file_count: fileCount,
+        chat_count: chatCount,
+        lead_count: leadCount
+      };
+    }));
+    
+    return agentsWithCounts;
+  } catch (error) {
+    throw error;
+  }
+}
+
+// Get agent by ID
+const getById = async (id) => {
+  try {
+    // Get agent by ID
+    const { data: agent, error: agentError } = await supabaseClient
+      .from('agents')
+      .select('*')
+      .eq('id', id)
+      .single();
+      
+    if (agentError) throw agentError;
+    if (!agent) return null;
+    
+    // Get file count
+    const { count: fileCount, error: fileError } = await supabaseClient
+      .from('files')
+      .select('id', { count: 'exact', head: true })
+      .eq('agent_id', id);
+      
+    if (fileError) throw fileError;
+    
+    // Get chat count
+    const { count: chatCount, error: chatError } = await supabaseClient
+      .from('chats')
+      .select('id', { count: 'exact', head: true })
+      .eq('agent_id', id);
+      
+    if (chatError) throw chatError;
+    
+    // Get lead count
+    const { count: leadCount, error: leadError } = await supabaseClient
+      .from('leads')
+      .select('id', { count: 'exact', head: true })
+      .eq('agent_id', id);
+      
+    if (leadError) throw leadError;
+    
+    return {
+      ...agent,
+      file_count: fileCount,
+      chat_count: chatCount,
+      lead_count: leadCount
+    };
+  } catch (error) {
+    throw error;
+  }
+}
+
+// Update agent
+const update = async (id, name, context) => {
+  try {
+    const { data, error } = await supabaseClient
+      .from('agents')
+      .update({ name, context })
+      .eq('id', id)
+      .select()
+      .single();
+      
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    throw error;
+  }
+}
+
+// Delete agent
+const deleteAgent = async (id) => {
+  try {
+    const { data, error } = await supabaseClient
+      .from('agents')
+      .delete()
+      .eq('id', id)
+      .select()
+      .single();
+      
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    throw error;
+  }
+}
+
+// Get agent files
+const getFiles = async (agentId) => {
+  try {
+    const { data, error } = await supabaseClient
+      .from('files')
+      .select('*')
+      .eq('agent_id', agentId)
+      .order('created_at', { ascending: false });
+      
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    throw error;
+  }
+}
+
+// Get agent chats
+const getChats = async (agentId) => {
+  try {
+    // Get chats for the agent
+    const { data: chats, error: chatsError } = await supabaseClient
+      .from('chats')
+      .select('*')
+      .eq('agent_id', agentId)
+      .order('created_at', { ascending: false });
+      
+    if (chatsError) throw chatsError;
+    
+    // For each chat, get the client info
+    const chatsWithClientInfo = await Promise.all(chats.map(async (chat) => {
+      if (!chat.client_id) return { ...chat, client_name: null, client_email: null };
+      
+      const { data: lead, error: leadError } = await supabaseClient
+        .from('leads')
+        .select('name, email')
+        .eq('id', chat.client_id)
+        .single();
+        
+      if (leadError && leadError.code !== 'PGRST116') throw leadError; // PGRST116 is 'not found'
+      
+      return {
+        ...chat,
+        client_name: lead?.name || null,
+        client_email: lead?.email || null
+      };
+    }));
+    
+    return chatsWithClientInfo;
+  } catch (error) {
+    throw error;
+  }
+}
+
+// Get agent leads
+const getLeads = async (agentId) => {
+  try {
+    const { data, error } = await supabaseClient
+      .from('leads')
+      .select('*')
+      .eq('agent_id', agentId)
+      .order('created_at', { ascending: false });
+      
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    throw error;
+  }
+}
+
+// Get agent cost summary
+const getCostSummary = async (agentId, startDate = null, endDate = null) => {
+  try {
+    let query = supabaseClient
+      .from('chats')
+      .select('*')
+      .eq('agent_id', agentId);
+    
+    if (startDate && endDate) {
+      query = query
+        .gte('created_at', startDate)
+        .lte('created_at', endDate);
+    }
+    
+    const { data, error } = await query;
+    
+    if (error) throw error;
+    
+    // Calculate summary statistics
+    const totalChats = data.length;
+    const totalTokens = data.reduce((sum, chat) => sum + (chat.token_count || 0), 0);
+    const totalCost = data.reduce((sum, chat) => sum + (chat.cost_usd || 0), 0);
+    const avgCostPerChat = totalChats > 0 ? totalCost / totalChats : 0;
+    
+    return {
+      total_chats: totalChats,
+      total_tokens: totalTokens,
+      total_cost: totalCost,
+      avg_cost_per_chat: avgCostPerChat
+    };
+  } catch (error) {
+    throw error;
+  }
+}
+
+module.exports = {
+  create,
+  getAll,
+  getById,
+  update,
+  deleteAgent,
+  getFiles,
+  getChats,
+  getLeads,
+  getCostSummary
+};

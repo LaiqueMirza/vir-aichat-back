@@ -1,40 +1,34 @@
-const { pool } = require('../config/db');
+const { supabaseClient } = require('../config/supabase');
 const ragService = require('../services/ragService');
-const Lead = require('../models/Lead');
+const LeadSupabase = require('../models/LeadSupabase');
+// Removed Lead model import as we now use LeadSupabase for all operations
 
 // Get all leads for an agent
 const getAgentLeads = async (req, res) => {
     try {
-      if (!pool) {
-        return res.status(503).json({ 
-          error: 'Database not configured',
-          message: 'Database connection is not available' 
-        });
-      }
-
       const { agentId } = req.params;
       const { status, limit = 50, offset = 0 } = req.query;
       
-      let query = 'SELECT * FROM leads WHERE agent_id = $1';
-      let params = [agentId];
+      let leads;
       
       if (status) {
-        query += ' AND status = $2';
-        params.push(status);
+        // If status is provided, use getByStatus
+        leads = await LeadSupabase.getByStatus(agentId, status);
+      } else {
+        // Otherwise get all leads for the agent
+        leads = await LeadSupabase.getAllByAgent(agentId);
       }
       
-      query += ' ORDER BY created_at DESC LIMIT $' + (params.length + 1) + ' OFFSET $' + (params.length + 2);
-      params.push(limit, offset);
-      
-      const result = await pool.query(query, params);
+      // Apply pagination manually (since Supabase client doesn't support offset/limit in this model)
+      const paginatedLeads = leads.slice(parseInt(offset), parseInt(offset) + parseInt(limit));
       
       res.json({
         success: true,
-        data: result.rows,
+        data: paginatedLeads,
         pagination: {
           limit: parseInt(limit),
           offset: parseInt(offset),
-          total: result.rows.length
+          total: leads.length
         }
       });
     } catch (error) {
@@ -49,21 +43,13 @@ const getAgentLeads = async (req, res) => {
 // Get lead by ID
 const getLeadById = async (req, res) => {
     try {
-      if (!pool) {
-        return res.status(503).json({ 
-          error: 'Database not configured',
-          message: 'Database connection is not available' 
-        });
-      }
-
       const { agentId, leadId } = req.params;
       
-      const result = await pool.query(
-        'SELECT * FROM leads WHERE id = $1 AND agent_id = $2',
-        [leadId, agentId]
-      );
+      // Get lead by ID using LeadSupabase model
+      const lead = await LeadSupabase.getById(leadId);
       
-      if (result.rows.length === 0) {
+      // Check if lead exists and belongs to the specified agent
+      if (!lead || lead.agent_id !== agentId) {
         return res.status(404).json({ 
           error: 'Lead not found',
           message: 'Lead does not exist or does not belong to this agent' 
@@ -72,7 +58,7 @@ const getLeadById = async (req, res) => {
       
       res.json({
         success: true,
-        data: result.rows[0]
+        data: lead
       });
     } catch (error) {
       console.error('❌ Error fetching lead:', error.message);
@@ -100,13 +86,15 @@ const extractLead = async (req, res) => {
       
       // Get conversation history
       let chatHistory = [];
-      if (pool) {
-        const chatResult = await pool.query(
-          'SELECT * FROM chats WHERE agent_id = $1 AND user_id = $2 ORDER BY created_at ASC',
-          [agentId, userId || conversationId]
-        );
-        chatHistory = chatResult.rows;
-      }
+      const { data: chats, error } = await supabaseClient
+        .from('chats')
+        .select('*')
+        .eq('agent_id', agentId)
+        .eq('user_id', userId || conversationId)
+        .order('created_at', { ascending: true });
+        
+      if (error) throw error;
+      chatHistory = chats;
       
       if (chatHistory.length === 0) {
         return res.status(404).json({ 
@@ -128,23 +116,18 @@ const extractLead = async (req, res) => {
       
       // Store lead in database
       let leadRecord = null;
-      if (pool) {
-        const result = await pool.query(
-          'INSERT INTO leads (agent_id, user_id, name, email, phone, company, notes, status, source_conversation_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *',
-          [
-            agentId,
-            userId || conversationId,
-            leadInfo.name || null,
-            leadInfo.email || null,
-            leadInfo.phone || null,
-            leadInfo.company || null,
-            leadInfo.notes || null,
-            'new',
-            conversationId
-          ]
-        );
-        leadRecord = result.rows[0];
-      }
+      // Create lead using LeadSupabase model
+      leadRecord = await LeadSupabase.create({
+        agent_id: agentId,
+        user_id: userId || conversationId,
+        name: leadInfo.name || null,
+        email: leadInfo.email || null,
+        phone: leadInfo.phone || null,
+        company: leadInfo.company || null,
+        notes: leadInfo.notes || null,
+        status: 'new',
+        source_conversation_id: conversationId
+      });
       
       console.log(`✅ Lead extracted and stored: ${leadInfo.name || 'Unknown'} (${leadInfo.email || 'No email'})`);
       
@@ -166,13 +149,6 @@ const extractLead = async (req, res) => {
 // Create lead manually
 const createLead = async (req, res) => {
     try {
-      if (!pool) {
-        return res.status(503).json({ 
-          error: 'Database not configured',
-          message: 'Database connection is not available' 
-        });
-      }
-
       const { agentId } = req.params;
       const { name, email, phone, company, notes, status = 'new', userId } = req.body;
       
@@ -183,15 +159,23 @@ const createLead = async (req, res) => {
         });
       }
       
-      const result = await pool.query(
-        'INSERT INTO leads (agent_id, user_id, name, email, phone, company, notes, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
-        [agentId, userId || 'manual', name, email, phone, company, notes, status]
-      );
+      // Create lead using LeadSupabase model
+      const lead = await LeadSupabase.create({
+        agent_id: agentId,
+        user_id: userId || 'manual',
+        name,
+        email,
+        phone,
+        company,
+        notes,
+        status
+      });
       
       console.log(`✅ Created lead manually: ${name || email}`);
       res.status(201).json({
         success: true,
-        data: result.rows[0],
+        data: lead,
+        lead_id: lead.id, // Explicitly include lead_id in the response
         message: 'Lead created successfully'
       });
     } catch (error) {
@@ -206,32 +190,33 @@ const createLead = async (req, res) => {
 // Update lead
 const updateLead = async (req, res) => {
     try {
-      if (!pool) {
-        return res.status(503).json({ 
-          error: 'Database not configured',
-          message: 'Database connection is not available' 
-        });
-      }
-
       const { agentId, leadId } = req.params;
       const { name, email, phone, company, notes, status } = req.body;
       
-      const result = await pool.query(
-        'UPDATE leads SET name = COALESCE($1, name), email = COALESCE($2, email), phone = COALESCE($3, phone), company = COALESCE($4, company), notes = COALESCE($5, notes), status = COALESCE($6, status), updated_at = CURRENT_TIMESTAMP WHERE id = $7 AND agent_id = $8 RETURNING *',
-        [name, email, phone, company, notes, status, leadId, agentId]
-      );
+      // Get the lead first to check if it exists and belongs to the agent
+      const existingLead = await LeadSupabase.getById(leadId);
       
-      if (result.rows.length === 0) {
+      if (!existingLead || existingLead.agent_id !== agentId) {
         return res.status(404).json({ 
           error: 'Lead not found',
           message: 'Lead does not exist or does not belong to this agent' 
         });
       }
       
-      console.log(`✅ Updated lead: ${result.rows[0].name || result.rows[0].email}`);
+      // Update lead using LeadSupabase model
+      const updatedLead = await LeadSupabase.update(leadId, {
+        name: name || existingLead.name,
+        email: email || existingLead.email,
+        phone: phone || existingLead.phone,
+        company: company || existingLead.company,
+        notes: notes || existingLead.notes,
+        status: status || existingLead.status
+      });
+      
+      console.log(`✅ Updated lead: ${updatedLead.name || updatedLead.email}`);
       res.json({
         success: true,
-        data: result.rows[0],
+        data: updatedLead,
         message: 'Lead updated successfully'
       });
     } catch (error) {
@@ -246,32 +231,26 @@ const updateLead = async (req, res) => {
 // Delete lead
 const deleteLead = async (req, res) => {
     try {
-      if (!pool) {
-        return res.status(503).json({ 
-          error: 'Database not configured',
-          message: 'Database connection is not available' 
-        });
-      }
-
       const { agentId, leadId } = req.params;
       
-      const result = await pool.query(
-        'DELETE FROM leads WHERE id = $1 AND agent_id = $2 RETURNING *',
-        [leadId, agentId]
-      );
+      // Get the lead first to check if it exists and belongs to the agent
+      const existingLead = await LeadSupabase.getById(leadId);
       
-      if (result.rows.length === 0) {
+      if (!existingLead || existingLead.agent_id !== agentId) {
         return res.status(404).json({ 
           error: 'Lead not found',
           message: 'Lead does not exist or does not belong to this agent' 
         });
       }
       
-      console.log(`✅ Deleted lead: ${result.rows[0].name || result.rows[0].email}`);
+      // Delete lead using LeadSupabase model
+      await LeadSupabase.deleteLead(leadId);
+      
+      console.log(`✅ Deleted lead: ${existingLead.name || existingLead.email}`);
       res.json({
         success: true,
-        message: 'Lead deleted successfully',
-        data: result.rows[0]
+        data: existingLead,
+        message: 'Lead deleted successfully'
       });
     } catch (error) {
       console.error('❌ Error deleting lead:', error.message);
@@ -285,45 +264,14 @@ const deleteLead = async (req, res) => {
 // Get lead statistics
 const getLeadStats = async (req, res) => {
     try {
-      if (!pool) {
-        return res.status(503).json({ 
-          error: 'Database not configured',
-          message: 'Database connection is not available' 
-        });
-      }
-
       const { agentId } = req.params;
       
-      const statsResult = await pool.query(`
-        SELECT 
-          COUNT(*) as total_leads,
-          COUNT(CASE WHEN status = 'new' THEN 1 END) as new_leads,
-          COUNT(CASE WHEN status = 'contacted' THEN 1 END) as contacted_leads,
-          COUNT(CASE WHEN status = 'qualified' THEN 1 END) as qualified_leads,
-          COUNT(CASE WHEN status = 'converted' THEN 1 END) as converted_leads,
-          COUNT(CASE WHEN created_at >= CURRENT_DATE - INTERVAL '7 days' THEN 1 END) as leads_this_week,
-          COUNT(CASE WHEN created_at >= CURRENT_DATE - INTERVAL '30 days' THEN 1 END) as leads_this_month
-        FROM leads 
-        WHERE agent_id = $1
-      `, [agentId]);
-      
-      const stats = statsResult.rows[0];
+      // Get lead statistics using LeadSupabase model
+      const stats = await LeadSupabase.getStats(agentId);
       
       res.json({
         success: true,
-        data: {
-          total: parseInt(stats.total_leads),
-          byStatus: {
-            new: parseInt(stats.new_leads),
-            contacted: parseInt(stats.contacted_leads),
-            qualified: parseInt(stats.qualified_leads),
-            converted: parseInt(stats.converted_leads)
-          },
-          recent: {
-            thisWeek: parseInt(stats.leads_this_week),
-            thisMonth: parseInt(stats.leads_this_month)
-          }
-        }
+        data: stats
       });
     } catch (error) {
       console.error('❌ Error fetching lead stats:', error.message);
@@ -339,11 +287,28 @@ const getAllLeads = async (req, res) => {
   try {
     const { status, limit = 50, offset = 0 } = req.query;
     
-    const leads = await Lead.getAll(status, parseInt(limit), parseInt(offset));
+    // Get all leads using LeadSupabase model
+    let leads;
+    if (status) {
+      leads = await LeadSupabase.getByStatus(null, status);
+    } else {
+      // Since there's no direct getAllLeads method in LeadSupabase, we'll use a workaround
+      // by fetching from Supabase directly
+      const { data, error } = await supabaseClient
+        .from('leads')
+        .select('*')
+        .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
+      
+      if (error) throw error;
+      leads = data;
+    }
+    
+    // Apply manual pagination if needed
+    const paginatedLeads = leads.slice(0, parseInt(limit));
     
     res.json({
       success: true,
-      data: leads,
+      data: paginatedLeads,
       pagination: {
         limit: parseInt(limit),
         offset: parseInt(offset),

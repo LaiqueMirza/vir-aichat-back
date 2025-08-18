@@ -16,16 +16,15 @@ A LangChain-powered multi-tenant AI chat agent system that allows companies to c
 
 - **Backend**: Node.js + Express
 - **AI Framework**: LangChain JS
-- **Database**: PostgreSQL (Neon free tier)
-- **Vector Database**: Supabase Vector (500MB free)
+- **Database**: Supabase (500MB free tier)
+- **Vector Database**: Supabase Vector (included in free tier)
 - **File Storage**: Local storage with Multer
 - **AI Models**: OpenAI GPT-4o and GPT-4o-mini
 
 ## 📋 Prerequisites
 
 1. **OpenAI API Key** - Get from [OpenAI Platform](https://platform.openai.com/)
-2. **PostgreSQL Database** - Free tier from [Neon](https://neon.tech/)
-3. **Supabase Account** - Free tier from [Supabase](https://supabase.com/)
+2. **Supabase Account** - Free tier from [Supabase](https://supabase.com/)
 
 ## ⚡ Quick Setup
 
@@ -53,9 +52,6 @@ NODE_ENV=development
 # OpenAI API Configuration
 OPENAI_API_KEY=sk-your-actual-openai-key
 
-# PostgreSQL Database (Neon Free Tier)
-DATABASE_URL=postgresql://username:password@hostname:port/database
-
 # Supabase Configuration (Free Tier)
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
@@ -66,12 +62,7 @@ VECTOR_DB_TYPE=supabase
 
 ### 3. Database Setup
 
-#### PostgreSQL (Neon)
-1. Go to [Neon](https://neon.tech/) and create a free account
-2. Create a new project
-3. Copy the connection string to `DATABASE_URL` in your `.env`
-
-#### Supabase Vector Database
+#### Supabase Database
 1. Go to [Supabase](https://supabase.com/) and create a free account
 2. Create a new project
 3. Go to Settings > API and copy:
@@ -234,8 +225,8 @@ Make sure to set `NODE_ENV=production` and update database URLs for production.
 ### Common Issues
 
 1. **Database Connection Error**
-   - Verify DATABASE_URL is correct
-   - Check if Neon database is active
+   - Verify Supabase credentials are correct
+   - Check if Supabase project is active
 
 2. **Vector Database Error**
    - Verify Supabase credentials

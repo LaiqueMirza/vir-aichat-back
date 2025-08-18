@@ -1,4 +1,4 @@
-const { pool } = require('../config/db');
+const { supabaseClient } = require('../config/supabase');
 const ragService = require('../services/ragService');
 const embeddingsService = require('../services/embeddingsService');
 
@@ -9,7 +9,7 @@ const healthCheck = async (req, res) => {
         status: 'healthy',
         timestamp: new Date().toISOString(),
         services: {
-          database: pool ? 'connected' : 'disabled',
+          database: supabaseClient ? 'connected' : 'disabled',
           ai: 'checking...',
           vectorDb: 'checking...'
         }
@@ -50,7 +50,7 @@ const getSystemInfo = async (req, res) => {
         version: process.env.npm_package_version || '1.0.0',
         environment: process.env.NODE_ENV || 'development',
         features: {
-          database: !!pool,
+          database: !!supabaseClient,
           ai: false,
           vectorSearch: false,
           fileUpload: true
@@ -147,7 +147,7 @@ const getPublicAgentInfo = async (req, res) => {
     try {
       const { agentId } = req.params;
       
-      if (!pool) {
+      if (!supabaseClient) {
         return res.json({
           success: true,
           data: {
@@ -160,30 +160,41 @@ const getPublicAgentInfo = async (req, res) => {
         });
       }
       
-      const result = await pool.query(
-        'SELECT id, name, context, created_at FROM agents WHERE id = $1',
-        [agentId]
-      );
+      const { data: result, error } = await supabaseClient
+        .from('agents')
+        .select('id, name, context, created_at')
+        .eq('id', agentId)
+        .single();
       
-      if (result.rows.length === 0) {
+      if (error || !result) {
         return res.status(404).json({
           error: 'Agent not found',
           message: 'The requested agent does not exist'
         });
       }
       
-      const agent = result.rows[0];
+      const agent = result;
       
       // Get basic statistics
-      const statsResult = await pool.query(`
-        SELECT 
-          COUNT(DISTINCT user_id) as total_users,
-          COUNT(*) as total_messages
-        FROM chats 
-        WHERE agent_id = $1
-      `, [agentId]);
+      const { data: chats, error: statsError } = await supabaseClient
+        .from('chats')
+        .select('user_id')
+        .eq('agent_id', agentId);
       
-      const stats = statsResult.rows[0];
+      if (statsError) {
+        console.error('Error fetching chat statistics:', statsError);
+      }
+      
+      // Calculate statistics
+      const uniqueUserIds = new Set();
+      chats?.forEach(chat => {
+        if (chat.user_id) uniqueUserIds.add(chat.user_id);
+      });
+      
+      const stats = {
+        total_users: uniqueUserIds.size,
+        total_messages: chats?.length || 0
+      };
       
       res.json({
         success: true,
@@ -193,8 +204,8 @@ const getPublicAgentInfo = async (req, res) => {
           description: agent.context || 'No description available',
           createdAt: agent.created_at,
           stats: {
-            totalUsers: parseInt(stats.total_users || 0),
-            totalMessages: parseInt(stats.total_messages || 0)
+            totalUsers: stats.total_users || 0,
+            totalMessages: stats.total_messages || 0
           },
           features: [
             'AI-powered responses',

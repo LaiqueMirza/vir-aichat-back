@@ -1,4 +1,5 @@
-const { pool } = require('../config/db');
+const { supabaseClient } = require('../config/supabase');
+const FileSupabase = require('../models/FileSupabase');
 const embeddingsService = require('../services/embeddingsService');
 const fileParser = require('../utils/fileParser');
 const multer = require('multer');
@@ -47,22 +48,13 @@ const getUploadMiddleware = () => {
 // Get all files for an agent
 const getAgentFiles = async (req, res) => {
     try {
-      if (!pool) {
-        return res.status(503).json({ 
-          error: 'Database not configured',
-          message: 'Database connection is not available' 
-        });
-      }
-
       const { agentId } = req.params;
-      const result = await pool.query(
-        'SELECT * FROM files WHERE agent_id = $1 ORDER BY created_at DESC',
-        [agentId]
-      );
+      
+      const files = await FileSupabase.getAllByAgent(agentId);
       
       res.json({
         success: true,
-        data: result.rows
+        data: files
       });
     } catch (error) {
       console.error('❌ Error fetching agent files:', error.message);
@@ -99,22 +91,19 @@ const uploadFile = async (req, res) => {
         });
       }
       
-      // Store file metadata
-      let fileRecord = null;
-      if (pool) {
-        const result = await pool.query(
-          'INSERT INTO files (agent_id, filename, original_name, file_path, file_size, content_preview) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-          [
-            agentId,
-            req.file.filename,
-            req.file.originalname,
-            req.file.path,
-            req.file.size,
-            content.substring(0, 500) + (content.length > 500 ? '...' : '')
-          ]
-        );
-        fileRecord = result.rows[0];
-      }
+      // Read file buffer for Supabase Storage
+      const fileBuffer = await fs.readFile(req.file.path);
+      
+      // Store file metadata with Supabase Storage integration
+      const fileRecord = await FileSupabase.create(
+        agentId,
+        req.file.originalname,
+        path.extname(req.file.originalname).toLowerCase().slice(1),
+        req.file.size,
+        fileBuffer,
+        req.file.mimetype,
+        'pending'
+      );
       
       // Process embeddings
       const embeddingResult = await embeddingsService.processDocument({
@@ -123,6 +112,9 @@ const uploadFile = async (req, res) => {
         content,
         filename: req.file.originalname
       });
+      
+      // Clean up local file after successful upload to Supabase Storage
+      await fs.unlink(req.file.path).catch(console.error);
       
       console.log(`✅ File processed: ${req.file.originalname} (${embeddingResult.chunksProcessed} chunks, ${embeddingResult.tokensUsed} tokens, $${embeddingResult.cost.toFixed(4)})`);
       
@@ -152,46 +144,39 @@ const uploadFile = async (req, res) => {
 // Delete file
 const deleteFile = async (req, res) => {
     try {
-      if (!pool) {
-        return res.status(503).json({ 
-          error: 'Database not configured',
-          message: 'Database connection is not available' 
-        });
-      }
-
       const { agentId, fileId } = req.params;
       
       // Get file info
-      const fileResult = await pool.query(
-        'SELECT * FROM files WHERE id = $1 AND agent_id = $2',
-        [fileId, agentId]
-      );
+      const { data: file, error } = await supabaseClient
+        .from('files')
+        .select('*')
+        .eq('id', fileId)
+        .eq('agent_id', agentId)
+        .single();
       
-      if (fileResult.rows.length === 0) {
+      if (error || !file) {
         return res.status(404).json({ 
           error: 'File not found',
           message: 'File does not exist or does not belong to this agent' 
         });
       }
       
-      const file = fileResult.rows[0];
-      
       // Delete embeddings
       await embeddingsService.deleteAgentEmbeddings(agentId, fileId);
       
       // Delete file record
-      await pool.query('DELETE FROM files WHERE id = $1', [fileId]);
+      const deletedFile = await FileSupabase.deleteFile(fileId);
       
       // Delete physical file
-      if (file.file_path) {
-        await fs.unlink(file.file_path).catch(console.error);
+      if (file.file_url) {
+        await fs.unlink(file.file_url).catch(console.error);
       }
       
-      console.log(`✅ Deleted file: ${file.original_name}`);
+      console.log(`✅ Deleted file: ${file.file_name}`);
       res.json({
         success: true,
         message: 'File deleted successfully',
-        data: file
+        data: deletedFile
       });
     } catch (error) {
       console.error('❌ Error deleting file:', error.message);
@@ -205,34 +190,22 @@ const deleteFile = async (req, res) => {
 // Reprocess file embeddings
 const reprocessFile = async (req, res) => {
     try {
-      if (!pool) {
-        return res.status(503).json({ 
-          error: 'Database not configured',
-          message: 'Database connection is not available' 
-        });
-      }
-
       const { agentId, fileId } = req.params;
       
       // Get file info
-      const fileResult = await pool.query(
-        'SELECT * FROM files WHERE id = $1 AND agent_id = $2',
-        [fileId, agentId]
-      );
+      const file = await FileSupabase.getById(fileId);
       
-      if (fileResult.rows.length === 0) {
+      if (!file || file.agent_id !== agentId) {
         return res.status(404).json({ 
           error: 'File not found',
           message: 'File does not exist or does not belong to this agent' 
         });
       }
       
-      const file = fileResult.rows[0];
-      
-      console.log(`🔄 Reprocessing file: ${file.original_name}`);
+      console.log(`🔄 Reprocessing file: ${file.file_name}`);
       
       // Parse file content again
-      const content = await fileParser.parseFile(file.file_path);
+      const content = await fileParser.parseFile(file.file_url);
       
       if (!content || content.trim().length === 0) {
         return res.status(400).json({ 
@@ -244,15 +217,18 @@ const reprocessFile = async (req, res) => {
       // Delete old embeddings
       await embeddingsService.deleteAgentEmbeddings(agentId, fileId);
       
+      // Update file status
+      await FileSupabase.updateEmbeddingStatus(fileId, 'pending');
+      
       // Process new embeddings
       const embeddingResult = await embeddingsService.processDocument({
         agentId,
         fileId,
         content,
-        filename: file.original_name
+        filename: file.file_name
       });
       
-      console.log(`✅ File reprocessed: ${file.original_name} (${embeddingResult.chunksProcessed} chunks, ${embeddingResult.tokensUsed} tokens, $${embeddingResult.cost.toFixed(4)})`);
+      console.log(`✅ File reprocessed: ${file.file_name} (${embeddingResult.chunksProcessed} chunks, ${embeddingResult.tokensUsed} tokens, $${embeddingResult.cost.toFixed(4)})`);
       
       res.json({
         success: true,
@@ -274,38 +250,27 @@ const reprocessFile = async (req, res) => {
 // Get file content preview
 const getFileContent = async (req, res) => {
     try {
-      if (!pool) {
-        return res.status(503).json({ 
-          error: 'Database not configured',
-          message: 'Database connection is not available' 
-        });
-      }
-
       const { agentId, fileId } = req.params;
       
-      const fileResult = await pool.query(
-        'SELECT * FROM files WHERE id = $1 AND agent_id = $2',
-        [fileId, agentId]
-      );
+      // Get file info using FileSupabase model
+      const file = await FileSupabase.getById(fileId);
       
-      if (fileResult.rows.length === 0) {
+      if (!file || file.agent_id !== agentId) {
         return res.status(404).json({ 
           error: 'File not found',
           message: 'File does not exist or does not belong to this agent' 
         });
       }
       
-      const file = fileResult.rows[0];
-      
       // Parse file content
-      const content = await fileParser.parseFile(file.file_path);
+      const content = await fileParser.parseFile(file.file_url);
       
       res.json({
         success: true,
         data: {
           file: {
             id: file.id,
-            originalName: file.original_name,
+            originalName: file.file_name,
             size: file.file_size,
             createdAt: file.created_at
           },

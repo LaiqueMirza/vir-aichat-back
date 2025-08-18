@@ -1,34 +1,38 @@
-const { pool } = require('../config/db');
+const { supabaseClient } = require('../config/supabase');
 const ragService = require('../services/ragService');
 const embeddingsService = require('../services/embeddingsService');
 const costService = require('../services/costService');
-const Chat = require('../models/Chat');
+const ChatSupabase = require('../models/ChatSupabase');
 
 // Get chat history for an agent
 const getChatHistory = async (req, res) => {
     try {
-      if (!pool) {
+      if (!supabaseClient) {
         return res.status(503).json({ 
           error: 'Database not configured',
-          message: 'Database connection is not available' 
+          message: 'Supabase connection is not available' 
         });
       }
 
       const { agentId } = req.params;
       const { limit = 50, offset = 0 } = req.query;
       
-      const result = await pool.query(
-        'SELECT * FROM chats WHERE agent_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3',
-        [agentId, limit, offset]
-      );
+      const { data, error, count } = await supabaseClient
+        .from('chats')
+        .select('*', { count: 'exact' })
+        .eq('agent_id', agentId)
+        .order('created_at', { ascending: false })
+        .range(offset, parseInt(offset) + parseInt(limit) - 1);
+      
+      if (error) throw error;
       
       res.json({
         success: true,
-        data: result.rows,
+        data: data,
         pagination: {
           limit: parseInt(limit),
           offset: parseInt(offset),
-          total: result.rows.length
+          total: count
         }
       });
     } catch (error) {
@@ -44,7 +48,7 @@ const getChatHistory = async (req, res) => {
 const sendMessage = async (req, res) => {
     try {
       const { agentId } = req.params;
-      const { message, userId } = req.body;
+      const { message, userId, lead_id } = req.body;
       
       if (!message) {
         return res.status(400).json({ 
@@ -57,12 +61,29 @@ const sendMessage = async (req, res) => {
       
       // Store user message
       let userChat = null;
-      if (pool) {
-        const userResult = await pool.query(
-          'INSERT INTO chats (agent_id, user_id, message, sender, tokens_used, cost) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-          [agentId, userId || 'anonymous', message, 'user', 0, 0]
-        );
-        userChat = userResult.rows[0];
+      if (supabaseClient) {
+        // Include lead_id if provided
+        const userMessage = { role: 'user', content: message };
+        const insertData = {
+          agent_id: agentId,
+          client_id: userId || 'anonymous',
+          messages: [userMessage],
+          total_tokens: 0,
+          total_cost: 0
+        };
+        
+        if (lead_id) {
+          insertData.lead_id = lead_id;
+        }
+        
+        const { data: userData, error: userError } = await supabaseClient
+          .from('chats')
+          .insert(insertData)
+          .select()
+          .single();
+        
+        if (userError) throw userError;
+        userChat = userData;
       }
       
       // Get relevant context using RAG
@@ -78,12 +99,28 @@ const sendMessage = async (req, res) => {
       
       // Store AI response
       let aiChat = null;
-      if (pool) {
-        const aiResult = await pool.query(
-          'INSERT INTO chats (agent_id, user_id, message, sender, tokens_used, cost) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-          [agentId, userId || 'anonymous', aiResponse.response, 'assistant', aiResponse.tokensUsed, aiResponse.cost]
-        );
-        aiChat = aiResult.rows[0];
+      if (supabaseClient) {
+        const assistantMessage = { role: 'assistant', content: aiResponse.response };
+        const insertData = {
+          agent_id: agentId,
+          client_id: userId || 'anonymous',
+          messages: [assistantMessage],
+          total_tokens: aiResponse.tokensUsed,
+          total_cost: aiResponse.cost
+        };
+        
+        if (lead_id) {
+          insertData.lead_id = lead_id;
+        }
+        
+        const { data: aiData, error: aiError } = await supabaseClient
+          .from('chats')
+          .insert(insertData)
+          .select()
+          .single();
+        
+        if (aiError) throw aiError;
+        aiChat = aiData;
         
         // Update cost tracking
         await costService.trackCost({
@@ -117,65 +154,67 @@ const sendMessage = async (req, res) => {
     }
 }
 
-// Get conversation summary
-const getConversationSummary = async (req, res) => {
-    try {
-      const { agentId } = req.params;
-      const { limit = 20 } = req.query;
-      
-      const chatHistory = await getRecentChatHistory(agentId, limit);
-      
-      if (chatHistory.length === 0) {
-        return res.json({
-          success: true,
-          data: {
-            summary: 'No conversation history available.',
-            messageCount: 0
-          }
-        });
-      }
-      
-      const summary = await ragService.generateConversationSummary(chatHistory);
-      
-      res.json({
-        success: true,
-        data: {
-          summary,
-          messageCount: chatHistory.length,
-          timeRange: {
-            from: chatHistory[chatHistory.length - 1]?.created_at,
-            to: chatHistory[0]?.created_at
-          }
-        }
-      });
-    } catch (error) {
-      console.error('❌ Error generating conversation summary:', error.message);
-      res.status(500).json({ 
-        error: 'Failed to generate conversation summary',
-        message: error.message 
+// Summarize conversation for an agent
+const summarizeConversation = async (req, res) => {
+  try {
+    const { agentId } = req.params;
+    
+    if (!supabaseClient) {
+      return res.status(503).json({ 
+        error: 'Database not configured',
+        message: 'Supabase connection is not available' 
       });
     }
+    
+    // Get recent chat history
+    const chatHistory = await getRecentChatHistory(agentId, 50);
+    
+    if (chatHistory.length === 0) {
+      return res.json({
+        success: true,
+        summary: 'No conversation history found.'
+      });
+    }
+    
+    // Generate summary using OpenAI
+    const summary = await ragService.summarizeConversation(chatHistory);
+    
+    res.json({
+      success: true,
+      summary
+    });
+  } catch (error) {
+    console.error('❌ Error summarizing conversation:', error.message);
+    res.status(500).json({ 
+      error: 'Failed to summarize conversation',
+      message: error.message 
+    });
+  }
 }
 
 // Clear chat history for an agent
 const clearChatHistory = async (req, res) => {
     try {
-      if (!pool) {
+      if (!supabaseClient) {
         return res.status(503).json({ 
           error: 'Database not configured',
-          message: 'Database connection is not available' 
+          message: 'Supabase connection is not available' 
         });
       }
 
       const { agentId } = req.params;
       
-      const result = await pool.query('DELETE FROM chats WHERE agent_id = $1', [agentId]);
+      const { data, error, count } = await supabaseClient
+        .from('chats')
+        .delete()
+        .eq('agent_id', agentId);
       
-      console.log(`✅ Cleared ${result.rowCount} messages for agent ${agentId}`);
+      if (error) throw error;
+      
+      console.log(`✅ Cleared chat messages for agent ${agentId}`);
       res.json({
         success: true,
-        message: `Cleared ${result.rowCount} messages`,
-        deletedCount: result.rowCount
+        message: `Chat history cleared for agent ${agentId}`
       });
     } catch (error) {
       console.error('❌ Error clearing chat history:', error.message);
@@ -189,32 +228,49 @@ const clearChatHistory = async (req, res) => {
 // Helper method to get recent chat history
 const getRecentChatHistory = async (agentId, limit = 10) => {
     try {
-      if (!pool) {
+      if (!supabaseClient) {
         return [];
       }
 
-      const result = await pool.query(
-        'SELECT * FROM chats WHERE agent_id = $1 ORDER BY created_at DESC LIMIT $2',
-        [agentId, limit]
-      );
+      const { data, error } = await supabaseClient
+        .from('chats')
+        .select('*')
+        .eq('agent_id', agentId)
+        .order('created_at', { ascending: false })
+        .limit(limit);
       
-      return result.rows.reverse(); // Return in chronological order
+      if (error) throw error;
+      
+      return data.reverse(); // Return in chronological order
     } catch (error) {
       console.error('❌ Error fetching recent chat history:', error.message);
       return [];
     }
 }
 
-// Get recent chats across all agents (for admin dashboard)
+// Get recent chats for a user
 const getRecentChats = async (req, res) => {
   try {
-    const { limit = 10 } = req.query;
+    const { userId } = req.params;
+    const { limit = 10, offset = 0 } = req.query;
     
-    const recentChats = await Chat.getRecent(parseInt(limit));
+    const { data, error, count } = await supabaseClient
+      .from('chats')
+      .select('*, leads(*)', { count: 'exact' })
+      .eq('client_id', userId)
+      .order('created_at', { ascending: false })
+      .range(offset, parseInt(offset) + parseInt(limit) - 1);
+    
+    if (error) throw error;
     
     res.json({
       success: true,
-      data: recentChats
+      data: data,
+      pagination: {
+        limit: parseInt(limit),
+        offset: parseInt(offset),
+        total: count
+      }
     });
   } catch (error) {
     console.error('❌ Error fetching recent chats:', error.message);
@@ -223,12 +279,12 @@ const getRecentChats = async (req, res) => {
       message: error.message 
     });
   }
-};
+}
 
 module.exports = {
   getChatHistory,
   sendMessage,
-  getConversationSummary,
+  summarizeConversation,
   clearChatHistory,
   getRecentChatHistory,
   getRecentChats

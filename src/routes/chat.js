@@ -9,12 +9,12 @@ router.get('/:agentId/chat', chatController.getChatHistory);
 router.post('/:agentId/chat', chatController.sendMessage);
 
 // Get conversation summary
-router.get('/:agentId/chat/summary', chatController.getConversationSummary);
+router.get('/:agentId/chat/summary', chatController.summarizeConversation);
 
 // Clear chat history for an agent
 router.delete('/:agentId/chat', chatController.clearChatHistory);
 
-// Get recent chats across all agents (for admin dashboard)
-router.get('/recent', chatController.getRecentChats);
+// Get recent chats for a user
+router.get('/user/:userId/recent', chatController.getRecentChats);
 
 module.exports = router;

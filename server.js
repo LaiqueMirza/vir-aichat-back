@@ -6,7 +6,8 @@ const path = require('path');
 // Load environment variables FIRST
 dotenv.config();
 
-const { testConnection, initializeTables } = require('./src/config/db');
+// Import Supabase client instead of PostgreSQL
+const { testConnection, initializeTables } = require('./src/config/supabase');
 
 const app = express();
 const PORT = process.env.PORT || 8000;
@@ -34,21 +35,40 @@ app.use('*', (req, res) => {
 const startServer = async () => {
   try {
     // Test database connection
-    await testConnection();
+    try {
+      console.log('🔄 Testing Supabase connection...');
+      const connectionSuccess = await testConnection();
+      if (!connectionSuccess) {
+        console.warn('⚠️ Database connection failed, but continuing startup');
+      }
+    } catch (dbError) {
+      console.warn('⚠️ Database connection issue, but continuing startup:', dbError.message);
+    }
     
     // Initialize database tables
-    await initializeTables();
+    try {
+      console.log('🔄 Initializing database tables...');
+      await initializeTables();
+    } catch (tableError) {
+      console.warn('⚠️ Table initialization issue, but continuing startup:', tableError.message);
+      console.log('\n📝 If tables are missing, you have two options:');
+      console.log('1. Run the SQL file directly in Supabase SQL Editor (Recommended):');
+      console.log('   - Open scripts/create-tables.sql');
+      console.log('   - Copy and paste its contents into the Supabase SQL Editor');
+      console.log('2. Or run the database setup script:');
+      console.log('   node scripts/create-tables.js');
+    }
     
     // Start the server
     app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`📊 Health check: http://localhost:${PORT}/health`);
-      console.log(`🔗 API endpoints:`);
-      console.log(`   - Agents: http://localhost:${PORT}/api/agents`);
-      console.log(`   - Files: http://localhost:${PORT}/api/files`);
-      console.log(`   - Chat: http://localhost:${PORT}/api/chat`);
-      console.log(`   - Leads: http://localhost:${PORT}/api/leads`);
-      console.log(`   - Analytics: http://localhost:${PORT}/api/analytics`);
+    //   console.log(`📊 Health check: http://localhost:${PORT}/health`);
+    //   console.log(`🔗 API endpoints:`);
+    //   console.log(`   - Agents: http://localhost:${PORT}/api/agents`);
+    //   console.log(`   - Files: http://localhost:${PORT}/api/files`);
+    //   console.log(`   - Chat: http://localhost:${PORT}/api/chat`);
+    //   console.log(`   - Leads: http://localhost:${PORT}/api/leads`);
+    //   console.log(`   - Analytics: http://localhost:${PORT}/api/analytics`);
     });
   } catch (error) {
     console.error('❌ Failed to start server:', error.message);

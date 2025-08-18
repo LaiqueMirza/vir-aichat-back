@@ -1,4 +1,4 @@
-const { pool } = require('../config/db');
+const { supabaseClient } = require('../config/supabase');
 
 // Calculate and store cost for a chat session
 const calculateSessionCost = async (chatId, tokenUsage, modelUsed) => {
@@ -48,39 +48,59 @@ const getCostRates = () => {
 
 // Get cost summary for an agent
 const getAgentCostSummary = async (agentId, startDate = null, endDate = null) => {
-    const client = await pool.connect();
     try {
-      let query = `
-        SELECT 
-          COUNT(*) as total_sessions,
-          SUM(token_count) as total_tokens,
-          SUM(cost_usd) as total_cost,
-          AVG(cost_usd) as avg_cost_per_session,
-          AVG(token_count) as avg_tokens_per_session,
-          MIN(cost_usd) as min_session_cost,
-          MAX(cost_usd) as max_session_cost,
-          DATE_TRUNC('day', created_at) as date,
-          COUNT(*) as daily_sessions,
-          SUM(cost_usd) as daily_cost
-        FROM chats 
-        WHERE agent_id = $1
-      `;
-      const params = [agentId];
+      let query = supabaseClient
+        .from('chats')
+        .select(`
+          count(*),
+          sum(token_count),
+          sum(cost_usd),
+          avg(cost_usd),
+          avg(token_count),
+          min(cost_usd),
+          max(cost_usd),
+          created_at
+        `)
+        .eq('agent_id', agentId);
 
       if (startDate && endDate) {
-        query += ` AND created_at BETWEEN $2 AND $3`;
-        params.push(startDate, endDate);
+        query = query.gte('created_at', startDate).lte('created_at', endDate);
       }
 
-      query += ` GROUP BY DATE_TRUNC('day', created_at) ORDER BY date DESC`;
-
-      const result = await client.query(query, params);
+      // Unfortunately, Supabase doesn't support DATE_TRUNC directly in the query builder
+      // We'll need to process the data after fetching it
+      const { data, error } = await query;
+      
+      if (error) throw error;
+      
+      // Group by day
+      const dailyData = {};
+      data.forEach(row => {
+        const date = new Date(row.created_at).toISOString().split('T')[0];
+        if (!dailyData[date]) {
+          dailyData[date] = {
+            sessions: 0,
+            tokens: 0,
+            cost: 0
+          };
+        }
+        dailyData[date].sessions += 1;
+        dailyData[date].tokens += parseInt(row.token_count || 0);
+        dailyData[date].cost += parseFloat(row.cost_usd || 0);
+      });
       
       // Calculate totals
-      const totals = result.rows.reduce((acc, row) => ({
-        totalSessions: acc.totalSessions + parseInt(row.daily_sessions),
-        totalTokens: acc.totalTokens + parseInt(row.total_tokens || 0),
-        totalCost: acc.totalCost + parseFloat(row.daily_cost || 0)
+      const dailyBreakdown = Object.keys(dailyData).map(date => ({
+        date,
+        sessions: dailyData[date].sessions,
+        tokens: dailyData[date].tokens,
+        cost: dailyData[date].cost
+      })).sort((a, b) => new Date(b.date) - new Date(a.date));
+      
+      const totals = dailyBreakdown.reduce((acc, row) => ({
+        totalSessions: acc.totalSessions + row.sessions,
+        totalTokens: acc.totalTokens + row.tokens,
+        totalCost: acc.totalCost + row.cost
       }), { totalSessions: 0, totalTokens: 0, totalCost: 0 });
 
       return {
@@ -89,97 +109,109 @@ const getAgentCostSummary = async (agentId, startDate = null, endDate = null) =>
           avgCostPerSession: totals.totalSessions > 0 ? totals.totalCost / totals.totalSessions : 0,
           avgTokensPerSession: totals.totalSessions > 0 ? totals.totalTokens / totals.totalSessions : 0
         },
-        dailyBreakdown: result.rows.map(row => ({
-          date: row.date,
-          sessions: parseInt(row.daily_sessions),
-          tokens: parseInt(row.total_tokens || 0),
-          cost: parseFloat(row.daily_cost || 0)
-        }))
+        dailyBreakdown
       };
     } catch (error) {
       throw error;
-    } finally {
-      client.release();
     }
 }
 
 // Get cost summary for all agents
 const getAllAgentsCostSummary = async (startDate = null, endDate = null) => {
-    const client = await pool.connect();
     try {
-      let query = `
-        SELECT 
-          a.id as agent_id,
-          a.name as agent_name,
-          COUNT(c.id) as total_sessions,
-          COALESCE(SUM(c.token_count), 0) as total_tokens,
-          COALESCE(SUM(c.cost_usd), 0) as total_cost,
-          COALESCE(AVG(c.cost_usd), 0) as avg_cost_per_session,
-          COALESCE(AVG(c.token_count), 0) as avg_tokens_per_session
-        FROM agents a
-        LEFT JOIN chats c ON a.id = c.agent_id
-      `;
-      const params = [];
-
-      if (startDate && endDate) {
-        query += ` AND c.created_at BETWEEN $1 AND $2`;
-        params.push(startDate, endDate);
-      }
-
-      query += ` GROUP BY a.id, a.name ORDER BY total_cost DESC`;
-
-      const result = await client.query(query, params);
+      // First get all agents
+      const { data: agents, error: agentsError } = await supabaseClient
+        .from('agents')
+        .select('id, name');
       
-      return result.rows.map(row => ({
-        agentId: row.agent_id,
-        agentName: row.agent_name,
-        totalSessions: parseInt(row.total_sessions),
-        totalTokens: parseInt(row.total_tokens),
-        totalCost: parseFloat(row.total_cost),
-        avgCostPerSession: parseFloat(row.avg_cost_per_session),
-        avgTokensPerSession: parseFloat(row.avg_tokens_per_session)
+      if (agentsError) throw agentsError;
+      
+      // For each agent, get their chats
+      const agentSummaries = await Promise.all(agents.map(async (agent) => {
+        let query = supabaseClient
+          .from('chats')
+          .select('id, token_count, cost_usd')
+          .eq('agent_id', agent.id);
+        
+        if (startDate && endDate) {
+          query = query.gte('created_at', startDate).lte('created_at', endDate);
+        }
+        
+        const { data: chats, error: chatsError } = await query;
+        
+        if (chatsError) throw chatsError;
+        
+        // Calculate metrics
+        const totalSessions = chats.length;
+        const totalTokens = chats.reduce((sum, chat) => sum + (chat.token_count || 0), 0);
+        const totalCost = chats.reduce((sum, chat) => sum + (chat.cost_usd || 0), 0);
+        const avgCostPerSession = totalSessions > 0 ? totalCost / totalSessions : 0;
+        const avgTokensPerSession = totalSessions > 0 ? totalTokens / totalSessions : 0;
+        
+        return {
+          agentId: agent.id,
+          agentName: agent.name,
+          totalSessions,
+          totalTokens,
+          totalCost,
+          avgCostPerSession,
+          avgTokensPerSession
+        };
       }));
+      
+      // Sort by total cost descending
+      return agentSummaries.sort((a, b) => b.totalCost - a.totalCost);
     } catch (error) {
       throw error;
-    } finally {
-      client.release();
     }
 }
 
 // Get monthly cost trends
 const getMonthlyCostTrends = async (agentId = null, months = 12) => {
-    const client = await pool.connect();
     try {
-      let query = `
-        SELECT 
-          DATE_TRUNC('month', created_at) as month,
-          COUNT(*) as sessions,
-          SUM(token_count) as tokens,
-          SUM(cost_usd) as cost
-        FROM chats
-        WHERE created_at >= CURRENT_DATE - INTERVAL '${months} months'
-      `;
-      const params = [];
-
-      if (agentId) {
-        query += ` AND agent_id = $1`;
-        params.push(agentId);
-      }
-
-      query += ` GROUP BY DATE_TRUNC('month', created_at) ORDER BY month DESC`;
-
-      const result = await client.query(query, params);
+      // Calculate the date from months ago
+      const monthsAgo = new Date();
+      monthsAgo.setMonth(monthsAgo.getMonth() - months);
       
-      return result.rows.map(row => ({
-        month: row.month,
-        sessions: parseInt(row.sessions),
-        tokens: parseInt(row.tokens || 0),
-        cost: parseFloat(row.cost || 0)
-      }));
+      // Query chats created after that date
+      let query = supabaseClient
+        .from('chats')
+        .select('created_at, token_count, cost_usd')
+        .gte('created_at', monthsAgo.toISOString());
+      
+      if (agentId) {
+        query = query.eq('agent_id', agentId);
+      }
+      
+      const { data, error } = await query;
+      
+      if (error) throw error;
+      
+      // Group by month
+      const monthlyData = {};
+      data.forEach(chat => {
+        // Extract year and month from created_at
+        const date = new Date(chat.created_at);
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        
+        if (!monthlyData[monthKey]) {
+          monthlyData[monthKey] = {
+            month: new Date(date.getFullYear(), date.getMonth(), 1),
+            sessions: 0,
+            tokens: 0,
+            cost: 0
+          };
+        }
+        
+        monthlyData[monthKey].sessions += 1;
+        monthlyData[monthKey].tokens += parseInt(chat.token_count || 0);
+        monthlyData[monthKey].cost += parseFloat(chat.cost_usd || 0);
+      });
+      
+      // Convert to array and sort by month descending
+      return Object.values(monthlyData).sort((a, b) => b.month - a.month);
     } catch (error) {
       throw error;
-    } finally {
-      client.release();
     }
   }
 
