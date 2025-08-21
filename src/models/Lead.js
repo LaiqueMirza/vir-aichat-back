@@ -117,9 +117,9 @@ const getByAgentId = async (agentId, status = null, limit = 50, offset = 0) => {
     // Get chat counts for each lead
     const leadsWithChatCounts = await Promise.all(data.map(async (lead) => {
       const { count, error: countError } = await supabaseClient
-        .from('chats')
-        .select('*', { count: 'exact', head: true })
-        .eq('client_id', lead.id);
+				.from("chats")
+				.select("*", { count: "exact", head: true })
+				.eq("lead_id", lead.id);
       
       return {
         ...lead,
@@ -160,9 +160,9 @@ const getAll = async (status = null, limit = 50, offset = 0) => {
     // Get chat counts for each lead
     const leadsWithChatCounts = await Promise.all(data.map(async (lead) => {
       const { count, error: countError } = await supabaseClient
-        .from('chats')
-        .select('*', { count: 'exact', head: true })
-        .eq('client_id', lead.id);
+				.from("chats")
+				.select("*", { count: "exact", head: true })
+				.eq("lead_id", lead.id);
       
       return {
         ...lead,

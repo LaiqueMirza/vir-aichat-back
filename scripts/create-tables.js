@@ -129,7 +129,7 @@ CREATE TABLE IF NOT EXISTS chat_logs (
   chat_id UUID NOT NULL REFERENCES chats(chat_id) ON DELETE CASCADE,
   message TEXT NOT NULL,
   role VARCHAR(50) NOT NULL CHECK (role IN ('user', 'assistant')),
-  token_count INTEGER DEFAULT 0 CHECK (token_count >= 0),
+  total_tokens INTEGER DEFAULT 0 CHECK (total_tokens >= 0),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );

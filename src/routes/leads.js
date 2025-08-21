@@ -9,10 +9,10 @@ router.get('/all', leadsController.getAllLeads);
 router.get('/:agentId', leadsController.getAgentLeads);
 
 // GET /api/leads/lead/:id - Get specific lead
-router.get('/lead/:id', leadsController.getLeadById);
+router.get('/lead/:agent_id', leadsController.getLeadById);
 
 // POST /api/leads/:agentId - Create new lead
-router.post('/:agentId', leadsController.createLead);
+router.post('/:agent_id', leadsController.createLead);
 
 // PUT /api/leads/:id - Update lead
 router.put('/:id', leadsController.updateLead);

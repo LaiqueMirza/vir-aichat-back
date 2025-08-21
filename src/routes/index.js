@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 
 // Import all route modules
-const agentsRoutes = require('./agents');
+const agentsRoutes = require('./agents.route');
 const filesRoutes = require('./files');
 const chatRoutes = require('./chat');
 const leadsRoutes = require('./leads');

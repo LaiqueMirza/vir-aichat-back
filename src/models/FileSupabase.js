@@ -1,11 +1,44 @@
-const { supabaseClient, uploadToStorage, deleteFromStorage } = require('../config/supabase');
+const { supabaseClient, uploadToStorage, deleteFromStorage, getSupabaseStorage, getSupabaseClient } = require('../config/supabase');
 const { v4: uuidv4 } = require('uuid');
 
 // Bucket name for agent files
 const AGENT_FILES_BUCKET = 'agent-files';
 
+// Ensure bucket exists and has correct permissions
+const initBucket = async () => {
+  try {
+    // const { data: buckets, error: bucketsError } = await getSupabaseStorage().listBuckets();
+    // if (bucketsError) throw bucketsError;
+
+    // const bucketExists = buckets.some(bucket => bucket.name === AGENT_FILES_BUCKET);
+    // if (!bucketExists) {
+    //   const { error: createError } = await getSupabaseStorage().createBucket(AGENT_FILES_BUCKET, {
+    //     public: true,
+    //     fileSizeLimit: 10485760 // 10MB
+    //   });
+      // if (createError) throw createError;
+
+      // Set up RLS policies for the bucket
+      const { error: policyError } = await getSupabaseStorage().from(AGENT_FILES_BUCKET).createPolicy(
+        'Enable access to agent files',
+        {
+          definition: true,
+          check: true,
+          allowedOperations: ['SELECT', 'INSERT', 'UPDATE', 'DELETE']
+        }
+      );
+      if (policyError) throw policyError;
+    // }
+  } catch (error) {
+    console.error('❌ Error initializing storage bucket:', error.message);
+    throw error;
+  }
+};
+
 // Create a new file record with Supabase Storage URL
-const create = async (agentId, fileName, fileType, fileSize, fileBuffer, contentType, embeddingStatus = 'pending') => {
+const create = async (agentId, fileName, fileType, fileSize, fileBuffer, contentType) => {
+  // Ensure bucket exists with correct permissions
+  // await initBucket();
   try {
     const id = uuidv4();
     const filePath = `${agentId}/${id}-${fileName}`;
@@ -19,23 +52,38 @@ const create = async (agentId, fileName, fileType, fileSize, fileBuffer, content
     );
     
     // Create file record in database
-    const { data, error } = await supabaseClient
-      .from('files')
-      .insert({
-        id,
-        agent_id: agentId,
-        file_name: fileName,
-        file_type: fileType,
-        file_size: fileSize,
-        file_url: storageResult.publicUrl,
-        storage_path: storageResult.path,
-        embedding_status: embeddingStatus
-      })
-      .select()
-      .single();
+    const { data, error } = await getSupabaseClient()
+      .from("files")
+			.insert({
+				agent_id: agentId,
+				file_name: fileName,
+				file_type: fileType,
+				file_size: fileSize,
+				file_url: storageResult.publicUrl,
+				file_path: storageResult.path,
+			})
+			.select()
+			.single();
     
     if (error) throw error;
     return data;
+  } catch (error) {
+    throw error;
+  }
+}
+
+// Create multiple file records with Supabase Storage URLs
+const createBatch = async (files) => {
+  try {
+    const results = [];
+    
+    for (const file of files) {
+      const { agentId, fileName, fileType, fileSize, fileBuffer, contentType } = file;
+      const result = await create(agentId, fileName, fileType, fileSize, fileBuffer, contentType);
+      results.push(result);
+    }
+    
+    return results;
   } catch (error) {
     throw error;
   }
@@ -105,6 +153,8 @@ const getAllByAgent = async (agentId) => {
 
 // Delete a file
 const deleteFile = async (id) => {
+  // Ensure bucket exists with correct permissions
+  await initBucket();
   try {
     // Get file info first
     const { data: fileData, error: fileError } = await supabaseClient
@@ -179,6 +229,7 @@ const getPendingEmbeddings = async () => {
 
 module.exports = {
   create,
+  createBatch,
   getById,
   update,
   getAllByAgent,

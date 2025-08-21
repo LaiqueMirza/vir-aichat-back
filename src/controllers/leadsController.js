@@ -1,6 +1,8 @@
 const { supabaseClient } = require('../config/supabase');
 const ragService = require('../services/ragService');
 const LeadSupabase = require('../models/LeadSupabase');
+const ChatSupabase = require("../models/ChatSupabase");
+const AgentSupabase = require("../models/AgentSupabase");
 // Removed Lead model import as we now use LeadSupabase for all operations
 
 // Get all leads for an agent
@@ -90,7 +92,7 @@ const extractLead = async (req, res) => {
         .from('chats')
         .select('*')
         .eq('agent_id', agentId)
-        .eq('user_id', userId || conversationId)
+        .eq('conversation_id', conversationId)
         .order('created_at', { ascending: true });
         
       if (error) throw error;
@@ -117,17 +119,12 @@ const extractLead = async (req, res) => {
       // Store lead in database
       let leadRecord = null;
       // Create lead using LeadSupabase model
-      leadRecord = await LeadSupabase.create({
-        agent_id: agentId,
-        user_id: userId || conversationId,
-        name: leadInfo.name || null,
-        email: leadInfo.email || null,
-        phone: leadInfo.phone || null,
-        company: leadInfo.company || null,
-        notes: leadInfo.notes || null,
-        status: 'new',
-        source_conversation_id: conversationId
-      });
+      leadRecord = await LeadSupabase.create(
+        agentId,
+        leadInfo.name || null,
+        leadInfo.phone || null,
+        leadInfo.email || null
+      );
       
       console.log(`✅ Lead extracted and stored: ${leadInfo.name || 'Unknown'} (${leadInfo.email || 'No email'})`);
       
@@ -149,8 +146,8 @@ const extractLead = async (req, res) => {
 // Create lead manually
 const createLead = async (req, res) => {
     try {
-      const { agentId } = req.params;
-      const { name, email, phone, company, notes, status = 'new', userId } = req.body;
+      const { agent_id } = req.params;
+      const { name, email, mobile } = req.body;
       
       if (!name && !email) {
         return res.status(400).json({ 
@@ -159,23 +156,23 @@ const createLead = async (req, res) => {
         });
       }
       
+      const agent = await AgentSupabase.getById(agent_id);
+
       // Create lead using LeadSupabase model
-      const lead = await LeadSupabase.create({
-        agent_id: agentId,
-        user_id: userId || 'manual',
+      const lead = await LeadSupabase.create(
+        agent_id,
         name,
-        email,
-        phone,
-        company,
-        notes,
-        status
-      });
+        mobile,
+        email
+      );
       
+      const chat = await ChatSupabase.create(agent_id, lead.lead_id);
       console.log(`✅ Created lead manually: ${name || email}`);
       res.status(201).json({
         success: true,
-        data: lead,
-        lead_id: lead.id, // Explicitly include lead_id in the response
+        lead,
+        chat,
+        agent,
         message: 'Lead created successfully'
       });
     } catch (error) {

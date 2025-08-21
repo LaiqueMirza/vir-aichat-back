@@ -1,19 +1,15 @@
-const { supabaseClient } = require('../config/supabase');
+const { getSupabaseClient } = require('../config/supabase');
 const { v4: uuidv4 } = require('uuid');
 
 // Create a new agent
-const create = async (name, description, systemPrompt, welcomeMessage, userId) => {
+const create = async (name, description) => {
   try {
     const id = uuidv4();
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('agents')
       .insert({
-        id,
         name,
         description,
-        system_prompt: systemPrompt,
-        welcome_message: welcomeMessage,
-        user_id: userId
       })
       .select()
       .single();
@@ -26,12 +22,12 @@ const create = async (name, description, systemPrompt, welcomeMessage, userId) =
 }
 
 // Get agent by ID
-const getById = async (id) => {
+const getById = async (agent_id) => {
   try {
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('agents')
       .select('*')
-      .eq('id', id)
+      .eq('agent_id', agent_id)
       .single();
     
     if (error) throw error;
@@ -57,7 +53,7 @@ const update = async (id, updates) => {
     // Add updated_at timestamp
     filteredUpdates.updated_at = new Date().toISOString();
     
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('agents')
       .update(filteredUpdates)
       .eq('id', id)
@@ -72,12 +68,11 @@ const update = async (id, updates) => {
 }
 
 // Get all agents for a user
-const getAllByUser = async (userId) => {
+const getAllByUser = async () => {
   try {
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('agents')
       .select('*')
-      .eq('user_id', userId)
       .order('created_at', { ascending: false });
     
     if (error) throw error;
@@ -88,12 +83,12 @@ const getAllByUser = async (userId) => {
 }
 
 // Delete an agent
-const deleteAgent = async (id) => {
+const deleteAgent = async (agent_id) => {
   try {
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('agents')
       .delete()
-      .eq('id', id)
+      .eq('agent_id', agent_id)
       .select()
       .single();
     
@@ -108,7 +103,7 @@ const deleteAgent = async (id) => {
 const getStats = async (id) => {
   try {
     // Get total chat count
-    const { count: chatCount, error: chatError } = await supabaseClient
+    const { count: chatCount, error: chatError } = await getSupabaseClient()
       .from('chats')
       .select('*', { count: 'exact', head: true })
       .eq('agent_id', id);
@@ -116,7 +111,7 @@ const getStats = async (id) => {
     if (chatError) throw chatError;
     
     // Get total lead count
-    const { count: leadCount, error: leadError } = await supabaseClient
+    const { count: leadCount, error: leadError } = await getSupabaseClient()
       .from('leads')
       .select('*', { count: 'exact', head: true })
       .eq('agent_id', id);
@@ -124,7 +119,7 @@ const getStats = async (id) => {
     if (leadError) throw leadError;
     
     // Get total token usage
-    const { data: tokenData, error: tokenError } = await supabaseClient
+    const { data: tokenData, error: tokenError } = await getSupabaseClient()
       .from('chats')
       .select('total_tokens')
       .eq('agent_id', id);
@@ -134,7 +129,7 @@ const getStats = async (id) => {
     const totalTokens = tokenData.reduce((sum, chat) => sum + (chat.total_tokens || 0), 0);
     
     // Get total cost
-    const { data: costData, error: costError } = await supabaseClient
+    const { data: costData, error: costError } = await getSupabaseClient()
       .from('chats')
       .select('total_cost')
       .eq('agent_id', id);

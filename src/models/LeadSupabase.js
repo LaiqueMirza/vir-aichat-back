@@ -1,20 +1,16 @@
-const { supabaseClient } = require('../config/supabase');
+const { supabaseClient, getSupabaseClient } = require('../config/supabase');
 const { v4: uuidv4 } = require('uuid');
 
 // Create a new lead
-const create = async (agentId, name = null, phone = null, email = null, followUp = null) => {
+const create = async (agent_id, name = null, mobile = null, email = null) => {
   try {
-    const id = uuidv4();
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('leads')
       .insert({
-        id,
-        agent_id: agentId,
+        agent_id: agent_id,
         name,
-        phone,
+        mobile,
         email,
-        follow_up_date: followUp,
-        status: 'new'
       })
       .select()
       .single();
@@ -57,7 +53,7 @@ const getById = async (id) => {
 // Update lead information
 const update = async (id, updates) => {
   try {
-    const allowedFields = ['name', 'phone', 'email', 'follow_up_date', 'status', 'notes', 'company', 'user_id', 'source_conversation_id'];
+    const allowedFields = ['name', 'phone', 'email', 'follow_up_date', 'status', 'notes', 'company', 'source_conversation_id'];
     const filteredUpdates = {};
     
     // Only include allowed fields in the update

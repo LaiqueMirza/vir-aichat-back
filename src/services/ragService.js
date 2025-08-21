@@ -52,11 +52,55 @@ Example: {"name": "John Doe", "phone": "+1234567890", "email": "john@example.com
 
 Lead Information:
     `);
+// Create RAG prompt function
+const createRagPrompt = async (
+  agentName,
+  agentDescription,
+  context,
+  formattedChatHistory,
+  question
+) => {
+  try {
+    // Build the prompt step by step for clarity
+    const prompt = `
+You are **${agentName}**, an AI assistant.  
+Your purpose is to provide **accurate, helpful, and professional responses** using the given context and chat history.  
+
+### Agent Profile  
+${agentDescription}
+
+### Guidelines  
+1. Always use the **context** provided to enhance your answer.  
+2. If the context does not contain enough information, politely say so and request clarification.  
+3. Maintain a **professional, friendly, and approachable tone**.  
+4. Keep responses **clear, concise, and directly relevant** to the user’s question.  
+5. When helpful, **summarize and structure your answers** (e.g., bullet points, steps).  
+
+### Context  
+${context}
+
+### Chat History  
+${formattedChatHistory}
+
+### Current User Question  
+${question}
+
+---
+
+💡 **Now, provide the best possible response following the above rules.**  
+    `;
+
+    return prompt.trim();
+  } catch (error) {
+    console.error("Error creating RAG prompt:", error);
+    throw new Error("Failed to create RAG prompt");
+  }
+};
+
 
 // Generate AI response using RAG
-const generateResponse = async (agentId, agentName, agentContext, question, chatHistory = []) => {
+const generateResponse = async (agent, question, relevantContent, chatHistory = []) => {
     try {
-      console.log(`🤖 Generating response for agent: ${agentName}`);
       
       // Check if OpenAI is configured
       if (!gpt4o || !gpt4oMini) {
@@ -75,14 +119,6 @@ const generateResponse = async (agentId, agentName, agentContext, question, chat
         };
       }
       
-      // Search for relevant content
-      const relevantContent = await embeddingsService.searchRelevantContent(
-        agentId, 
-        question, 
-        5, 
-        0.7
-      );
-      
       // Prepare context from relevant content
       const context = relevantContent.length > 0 
         ? relevantContent.map(item => item.content).join('\n\n')
@@ -90,18 +126,17 @@ const generateResponse = async (agentId, agentName, agentContext, question, chat
       
       // Prepare chat history
       const formattedChatHistory = chatHistory
-        .slice(-10) // Keep last 10 messages for context
-        .map(msg => `${msg.role}: ${msg.content}`)
+        .map(msg => `${msg.role}: ${msg.message}`)
         .join('\n');
       
       // Create the prompt
-      const prompt = await this.systemPromptTemplate.format({
-        agentName,
-        agentContext,
+      const prompt = await createRagPrompt(
+        agent.name,
+        agent.description,
         context,
-        chatHistory: formattedChatHistory,
+        formattedChatHistory,
         question
-      });
+      );
       
       // Determine which model to use based on complexity
       const model = shouldUseGPT4o(question, context) ? gpt4o : gpt4oMini;
@@ -111,7 +146,7 @@ const generateResponse = async (agentId, agentName, agentContext, question, chat
       
       // Generate response
       const response = await model.invoke(prompt);
-      
+      console.log('Generated response:', response);
       // Calculate token usage and cost
       const tokenUsage = tokenCounter.calculateChatTokenUsage(
         [{ role: 'system', content: prompt }],
@@ -289,5 +324,6 @@ module.exports = {
   cleanPhone,
   cleanEmail,
   cleanDate,
-  generateConversationSummary
+  generateConversationSummary,
+  createRagPrompt
 };

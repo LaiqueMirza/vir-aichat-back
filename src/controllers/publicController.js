@@ -177,9 +177,9 @@ const getPublicAgentInfo = async (req, res) => {
       
       // Get basic statistics
       const { data: chats, error: statsError } = await supabaseClient
-        .from('chats')
-        .select('user_id')
-        .eq('agent_id', agentId);
+				.from("chats")
+				.select("lead_id")
+				.eq("agent_id", agentId);
       
       if (statsError) {
         console.error('Error fetching chat statistics:', statsError);
@@ -188,7 +188,7 @@ const getPublicAgentInfo = async (req, res) => {
       // Calculate statistics
       const uniqueUserIds = new Set();
       chats?.forEach(chat => {
-        if (chat.user_id) uniqueUserIds.add(chat.user_id);
+        if (chat.lead_id) uniqueUserIds.add(chat.lead_id);
       });
       
       const stats = {
@@ -227,70 +227,75 @@ const getPublicAgentInfo = async (req, res) => {
 const getApiDocs = async (req, res) => {
     try {
       const docs = {
-        title: 'Multi-tenant Chat Agent API',
-        version: '1.0.0',
-        description: 'RESTful API for managing chat agents, conversations, files, and leads',
-        baseUrl: `${req.protocol}://${req.get('host')}`,
-        endpoints: {
-          public: {
-            'GET /health': 'Health check',
-            'GET /api/info': 'System information',
-            'POST /api/public/chat': 'Public chat endpoint',
-            'GET /api/public/agents/:agentId': 'Public agent information',
-            'GET /api/docs': 'API documentation'
-          },
-          agents: {
-            'GET /api/agents': 'List all agents',
-            'POST /api/agents': 'Create new agent',
-            'GET /api/agents/:id': 'Get agent by ID',
-            'PUT /api/agents/:id': 'Update agent',
-            'DELETE /api/agents/:id': 'Delete agent'
-          },
-          chat: {
-            'GET /api/agents/:agentId/chat': 'Get chat history',
-            'POST /api/agents/:agentId/chat': 'Send message',
-            'GET /api/agents/:agentId/chat/summary': 'Get conversation summary',
-            'DELETE /api/agents/:agentId/chat': 'Clear chat history'
-          },
-          files: {
-            'GET /api/agents/:agentId/files': 'List agent files',
-            'POST /api/agents/:agentId/files': 'Upload file',
-            'GET /api/agents/:agentId/files/:fileId': 'Get file content',
-            'DELETE /api/agents/:agentId/files/:fileId': 'Delete file',
-            'POST /api/agents/:agentId/files/:fileId/reprocess': 'Reprocess file'
-          },
-          leads: {
-            'GET /api/agents/:agentId/leads': 'List agent leads',
-            'POST /api/agents/:agentId/leads': 'Create lead',
-            'GET /api/agents/:agentId/leads/:leadId': 'Get lead by ID',
-            'PUT /api/agents/:agentId/leads/:leadId': 'Update lead',
-            'DELETE /api/agents/:agentId/leads/:leadId': 'Delete lead',
-            'POST /api/agents/:agentId/leads/extract': 'Extract lead from conversation',
-            'GET /api/agents/:agentId/leads/stats': 'Get lead statistics'
-          },
-          analytics: {
-            'GET /api/agents/:agentId/analytics': 'Get agent analytics',
-            'GET /api/agents/:agentId/analytics/costs': 'Get cost breakdown',
-            'GET /api/agents/:agentId/analytics/engagement': 'Get user engagement',
-            'GET /api/agents/:agentId/analytics/performance': 'Get performance metrics'
-          }
-        },
-        authentication: {
-          note: 'This API currently does not require authentication. In production, implement proper authentication and authorization.'
-        },
-        errorHandling: {
-          format: {
-            error: 'Error type',
-            message: 'Human-readable error message'
-          },
-          codes: {
-            400: 'Bad Request - Invalid input',
-            404: 'Not Found - Resource does not exist',
-            500: 'Internal Server Error - Server error',
-            503: 'Service Unavailable - External service not configured'
-          }
-        }
-      };
+				title: "Multi-tenant Chat Agent API",
+				version: "1.0.0",
+				description:
+					"RESTful API for managing chat agents, conversations, files, and leads",
+				baseUrl: `${req.protocol}://${req.get("host")}`,
+				endpoints: {
+					public: {
+						"GET /health": "Health check",
+						"GET /api/info": "System information",
+						"POST /api/public/chat": "Public chat endpoint",
+						"GET /api/public/agents/:agentId": "Public agent information",
+						"GET /api/docs": "API documentation",
+					},
+					agents: {
+						"GET /api/agents": "List all agents",
+						"POST /api/agents": "Create new agent",
+						"GET /api/agents/:id": "Get agent by ID",
+						"PUT /api/agents/:id": "Update agent",
+						"DELETE /api/agents/:id": "Delete agent",
+					},
+					chat: {
+						"GET /api/agents/:agentId/chat": "Get chat history",
+						"POST /api/agents/:agentId/chat": "Send message (requires lead_id)",
+						"GET /api/agents/:agentId/chat/summary": "Get conversation summary",
+						"DELETE /api/agents/:agentId/chat": "Clear chat history",
+					},
+					files: {
+						"GET /api/agents/:agentId/files": "List agent files",
+						"POST /api/agents/:agentId/files": "Upload file",
+						"GET /api/agents/:agentId/files/:fileId": "Get file content",
+						"DELETE /api/agents/:agentId/files/:fileId": "Delete file",
+						"POST /api/agents/:agentId/files/:fileId/reprocess":
+							"Reprocess file",
+					},
+					leads: {
+						"GET /api/agents/:agentId/leads": "List agent leads",
+						"POST /api/agents/:agentId/leads": "Create lead",
+						"GET /api/agents/:agentId/leads/:leadId": "Get lead by ID",
+						"PUT /api/agents/:agentId/leads/:leadId": "Update lead",
+						"DELETE /api/agents/:agentId/leads/:leadId": "Delete lead",
+						"POST /api/agents/:agentId/leads/extract":
+							"Extract lead from conversation",
+						"GET /api/agents/:agentId/leads/stats": "Get lead statistics",
+					},
+					analytics: {
+						"GET /api/agents/:agentId/analytics": "Get agent analytics",
+						"GET /api/agents/:agentId/analytics/costs": "Get cost breakdown",
+						"GET /api/agents/:agentId/analytics/engagement":
+							"Get user engagement",
+						"GET /api/agents/:agentId/analytics/performance":
+							"Get performance metrics",
+					},
+				},
+				authentication: {
+					note: "This API currently does not require authentication. In production, implement proper authentication and authorization.",
+				},
+				errorHandling: {
+					format: {
+						error: "Error type",
+						message: "Human-readable error message",
+					},
+					codes: {
+						400: "Bad Request - Invalid input",
+						404: "Not Found - Resource does not exist",
+						500: "Internal Server Error - Server error",
+						503: "Service Unavailable - External service not configured",
+					},
+				},
+			};
       
       res.json({
         success: true,

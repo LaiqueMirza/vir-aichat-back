@@ -42,7 +42,7 @@ const upload = multer({
 
 // Get upload middleware
 const getUploadMiddleware = () => {
-    return upload.single('file');
+    return upload.array('file', 10);
 }
 
 // Get all files for an agent
@@ -65,66 +65,70 @@ const getAgentFiles = async (req, res) => {
     }
 }
 
-// Upload and process file
+// Upload and process files
 const uploadFile = async (req, res) => {
     try {
       const { agentId } = req.params;
       
-      if (!req.file) {
+      if (!req.files || req.files.length === 0) {
         return res.status(400).json({ 
           error: 'Validation error',
-          message: 'No file uploaded' 
+          message: 'No files uploaded' 
         });
       }
       
-      console.log(`📁 Processing file upload: ${req.file.originalname} for agent ${agentId}`);
+      console.log(`📁 Processing ${req.files.length} file(s) upload for agent ${agentId}`);
       
-      // Parse file content
-      const content = await fileParser.parseFile(req.file.path, req.file.mimetype);
+      const results = [];
       
-      if (!content || content.trim().length === 0) {
-        // Clean up uploaded file
-        await fs.unlink(req.file.path).catch(console.error);
-        return res.status(400).json({ 
-          error: 'File processing error',
-          message: 'Could not extract text content from file' 
+      for (const file of req.files) {
+        // Parse file content
+        const content = await fileParser.parseFile(file.path, file.mimetype);
+        
+        if (!content || content.trim().length === 0) {
+          // Clean up uploaded file
+          await fs.unlink(file.path).catch(console.error);
+          console.warn(`⚠️ Skipping file ${file.originalname}: Could not extract text content`);
+          continue;
+        }
+        
+        // Read file buffer for Supabase Storage
+        const fileBuffer = await fs.readFile(file.path);
+        
+        // Store file metadata with Supabase Storage integration
+        const fileRecord = await FileSupabase.create(
+          agentId,
+          file.originalname,
+          path.extname(file.originalname).toLowerCase().slice(1),
+          file.size,
+          fileBuffer,
+          file.mimetype,
+          'pending'
+        );
+        
+        // Process embeddings
+        const embeddingResult = await embeddingsService.processDocument({
+          agentId,
+          fileId: fileRecord?.id,
+          content,
+          filename: file.originalname
+        });
+
+        // Clean up local file after successful upload to Supabase Storage
+        await fs.unlink(file.path).catch(console.error);
+        
+        console.log(`✅ File processed: ${file.originalname} (${embeddingResult.chunksProcessed} chunks, ${embeddingResult.tokensUsed} tokens, $${embeddingResult.cost.toFixed(4)})`);
+        
+        results.push({
+          file: fileRecord,
+          processing: embeddingResult
         });
       }
-      
-      // Read file buffer for Supabase Storage
-      const fileBuffer = await fs.readFile(req.file.path);
-      
-      // Store file metadata with Supabase Storage integration
-      const fileRecord = await FileSupabase.create(
-        agentId,
-        req.file.originalname,
-        path.extname(req.file.originalname).toLowerCase().slice(1),
-        req.file.size,
-        fileBuffer,
-        req.file.mimetype,
-        'pending'
-      );
-      
-      // Process embeddings
-      const embeddingResult = await embeddingsService.processDocument({
-        agentId,
-        fileId: fileRecord?.id,
-        content,
-        filename: req.file.originalname
-      });
-      
-      // Clean up local file after successful upload to Supabase Storage
-      await fs.unlink(req.file.path).catch(console.error);
-      
-      console.log(`✅ File processed: ${req.file.originalname} (${embeddingResult.chunksProcessed} chunks, ${embeddingResult.tokensUsed} tokens, $${embeddingResult.cost.toFixed(4)})`);
       
       res.status(201).json({
         success: true,
-        data: {
-          file: fileRecord,
-          processing: embeddingResult
-        },
-        message: 'File uploaded and processed successfully'
+        data: results,
+        message: `${results.length} file(s) uploaded and processed successfully`
       });
     } catch (error) {
       console.error('❌ Error uploading file:', error.message);

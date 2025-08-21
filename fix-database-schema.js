@@ -45,7 +45,7 @@ async function fixDatabaseSchema() {
 
     console.log('🎉 Database schema fix completed successfully!');
     console.log('📝 Summary of changes:');
-    console.log('   - Changed chats.client_id from VARCHAR(255) to UUID');
+    console.log("   - Changed chats.lead_id from VARCHAR(255) to UUID");
     console.log('   - Added foreign key constraint to leads table');
     console.log('   - Updated indexes');
     if (existingChats.count > 0) {

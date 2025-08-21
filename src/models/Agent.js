@@ -181,13 +181,14 @@ const getChats = async (agentId) => {
     
     // For each chat, get the client info
     const chatsWithClientInfo = await Promise.all(chats.map(async (chat) => {
-      if (!chat.client_id) return { ...chat, client_name: null, client_email: null };
+      if (!chat.lead_id)
+				return { ...chat, client_name: null, client_email: null };
       
       const { data: lead, error: leadError } = await supabaseClient
-        .from('leads')
-        .select('name, email')
-        .eq('id', chat.client_id)
-        .single();
+				.from("leads")
+				.select("name, email")
+				.eq("id", chat.lead_id)
+				.single();
         
       if (leadError && leadError.code !== 'PGRST116') throw leadError; // PGRST116 is 'not found'
       
@@ -240,7 +241,10 @@ const getCostSummary = async (agentId, startDate = null, endDate = null) => {
     
     // Calculate summary statistics
     const totalChats = data.length;
-    const totalTokens = data.reduce((sum, chat) => sum + (chat.token_count || 0), 0);
+    const totalTokens = data.reduce(
+			(sum, chat) => sum + (chat.total_tokens || 0),
+			0
+		);
     const totalCost = data.reduce((sum, chat) => sum + (chat.cost_usd || 0), 0);
     const avgCostPerChat = totalChats > 0 ? totalCost / totalChats : 0;
     

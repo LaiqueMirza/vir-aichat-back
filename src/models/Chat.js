@@ -1,22 +1,21 @@
-const { supabaseClient } = require('../config/supabase');
+const { supabaseClient, getSupabaseClient } = require('../config/supabase');
 const { v4: uuidv4 } = require('uuid');
 
 // Create a new chat session
-const create = async (agentId, clientId = null) => {
+const create = async (agent_id, lead_id = null) => {
   try {
-    const id = uuidv4();
-    const { data, error } = await supabaseClient
-      .from('chats')
-      .insert([{ 
-        id, 
-        agent_id: agentId, 
-        client_id: clientId, 
-        messages: [], 
-        total_tokens: 0, 
-        total_cost: 0.00 
-      }])
-      .select()
-      .single();
+    const { data, error } = await getSupabaseClient()
+			.from("chats")
+			.insert([
+				{
+					agent_id: agent_id,
+					lead_id: lead_id,
+					total_tokens: 0,
+					total_cost: 0.0,
+				},
+			])
+			.select()
+			.single();
       
     if (error) throw error;
     return data;
@@ -28,36 +27,36 @@ const create = async (agentId, clientId = null) => {
 // Get chat by ID
 const getById = async (id) => {
   try {
-    // Get chat data
-    const { data: chat, error: chatError } = await supabaseClient
-      .from('chats')
-      .select('*')
-      .eq('id', id)
-      .single();
-      
-    if (chatError) throw chatError;
-    
-    // If chat has a client_id, get client data
-    if (chat.client_id) {
-      const { data: client, error: clientError } = await supabaseClient
-        .from('leads')
-        .select('name, email, phone')
-        .eq('id', chat.client_id)
-        .single();
-        
-      if (!clientError && client) {
-        // Add client data to chat object
-        return {
-          ...chat,
-          client_name: client.name,
-          client_email: client.email,
-          client_phone: client.phone
-        };
-      }
-    }
-    
-    return chat;
-  } catch (error) {
+		// Get chat data
+		const { data: chat, error: chatError } = await supabaseClient
+			.from("chats")
+			.select("*")
+			.eq("id", id)
+			.single();
+
+		if (chatError) throw chatError;
+
+		// If chat has a lead_id, get client data
+		if (chat.lead_id) {
+			const { data: client, error: clientError } = await supabaseClient
+				.from("leads")
+				.select("name, email, phone")
+				.eq("id", chat.lead_id)
+				.single();
+
+			if (!clientError && client) {
+				// Add client data to chat object
+				return {
+					...chat,
+					client_name: client.name,
+					client_email: client.email,
+					client_phone: client.phone,
+				};
+			}
+		}
+
+		return chat;
+	} catch (error) {
     throw error;
   }
 }
@@ -116,11 +115,11 @@ const addMessage = async (chatId, message, tokenCount = 0, cost = 0) => {
 const linkToLead = async (chatId, leadId) => {
   try {
     const { data, error } = await supabaseClient
-      .from('chats')
-      .update({ client_id: leadId })
-      .eq('id', chatId)
-      .select()
-      .single();
+			.from("chats")
+			.update({ lead_id: leadId })
+			.eq("id", chatId)
+			.select()
+			.single();
       
     if (error) throw error;
     return data;
@@ -132,39 +131,41 @@ const linkToLead = async (chatId, leadId) => {
 // Get all chats for an agent
 const getByAgentId = async (agentId, limit = 50, offset = 0) => {
   try {
-    // Get chats for the agent
-    const { data: chats, error: chatsError } = await supabaseClient
-      .from('chats')
-      .select('*')
-      .eq('agent_id', agentId)
-      .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1);
-      
-    if (chatsError) throw chatsError;
-    
-    // Get client information for chats with client_id
-    const chatsWithClientInfo = await Promise.all(chats.map(async (chat) => {
-      if (chat.client_id) {
-        const { data: client, error: clientError } = await supabaseClient
-          .from('leads')
-          .select('name, email, phone')
-          .eq('id', chat.client_id)
-          .single();
-          
-        if (!clientError && client) {
-          return {
-            ...chat,
-            client_name: client.name,
-            client_email: client.email,
-            client_phone: client.phone
-          };
-        }
-      }
-      return chat;
-    }));
-    
-    return chatsWithClientInfo;
-  } catch (error) {
+		// Get chats for the agent
+		const { data: chats, error: chatsError } = await supabaseClient
+			.from("chats")
+			.select("*")
+			.eq("agent_id", agentId)
+			.order("created_at", { ascending: false })
+			.range(offset, offset + limit - 1);
+
+		if (chatsError) throw chatsError;
+
+		// Get client information for chats with lead_id
+		const chatsWithClientInfo = await Promise.all(
+			chats.map(async (chat) => {
+				if (chat.lead_id) {
+					const { data: client, error: clientError } = await supabaseClient
+						.from("leads")
+						.select("name, email, phone")
+						.eq("id", chat.lead_id)
+						.single();
+
+					if (!clientError && client) {
+						return {
+							...chat,
+							client_name: client.name,
+							client_email: client.email,
+							client_phone: client.phone,
+						};
+					}
+				}
+				return chat;
+			})
+		);
+
+		return chatsWithClientInfo;
+	} catch (error) {
     throw error;
   }
 }
@@ -249,18 +250,18 @@ const getRecent = async (limit = 10) => {
       let clientName = null;
       let clientEmail = null;
       
-      if (chat.client_id) {
-        const { data: client, error: clientError } = await supabaseClient
-          .from('leads')
-          .select('name, email')
-          .eq('id', chat.client_id)
-          .single();
-          
-        if (!clientError && client) {
-          clientName = client.name;
-          clientEmail = client.email;
-        }
-      }
+      if (chat.lead_id) {
+				const { data: client, error: clientError } = await supabaseClient
+					.from("leads")
+					.select("name, email")
+					.eq("id", chat.lead_id)
+					.single();
+
+				if (!clientError && client) {
+					clientName = client.name;
+					clientEmail = client.email;
+				}
+			}
       
       return {
         ...chat,

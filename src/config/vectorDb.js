@@ -1,4 +1,5 @@
 const { createClient } = require('@supabase/supabase-js');
+const { getSupabaseClient } = require('./supabase');
 
 // Supabase Vector Database configuration
 let supabase = null;
@@ -43,23 +44,15 @@ const initializeVectorTable = async () => {
 };
 
 // Store embeddings with metadata
-const storeEmbedding = async (agentId, content, embedding, metadata = {}) => {
-  if (!supabase) {
-    console.warn('⚠️ Skipping embedding storage - Supabase not configured');
-    return null;
-  }
+const storeEmbedding = async (fileId, content, embedding) => {
   
   try {
-    const { data, error } = await supabase
-      .from('embeddings')
+    const { data, error } = await getSupabaseClient()
+      .from('files_vectors')
       .insert({
-        agent_id: agentId,
+        file_id: fileId,
         content: content,
         embedding: embedding,
-        metadata: {
-          ...metadata,
-          created_at: new Date().toISOString()
-        }
       });
     
     if (error) throw error;
@@ -71,16 +64,22 @@ const storeEmbedding = async (agentId, content, embedding, metadata = {}) => {
 };
 
 // Search similar embeddings
-const searchSimilarEmbeddings = async (agentId, queryEmbedding, limit = 5, threshold = 0.7) => {
+const searchSimilarEmbeddings = async (agentId, queryEmbedding, limit = 3, threshold = 0.3) => {
   if (!supabase) {
     console.warn('⚠️ Skipping embedding search - Supabase not configured');
     return [];
   }
+  // get all file_ids where agent_id = agentId
+  const { data: file_ids, error: file_ids_error } = await getSupabaseClient()
+    .from('files')
+    .select('file_id')
+    .eq('agent_id', agentId);
   
+  if (file_ids_error) throw file_ids_error;
   try {
     const { data, error } = await supabase.rpc('match_embeddings', {
+      file_ids: file_ids.map(file => file.file_id),
       query_embedding: queryEmbedding,
-      agent_id: agentId,
       match_threshold: threshold,
       match_count: limit
     });

@@ -59,7 +59,7 @@ const getDashboardAnalytics = async (req, res) => {
       const totalMessages = chats.reduce((sum, chat) => sum + (chat.messages ? chat.messages.length : 0), 0);
       const totalTokens = chats.reduce((sum, chat) => sum + (chat.total_tokens || 0), 0);
       const totalCost = chats.reduce((sum, chat) => sum + (chat.total_cost || 0), 0);
-      const uniqueUsers = new Set(chats.map(chat => chat.client_id)).size;
+      const uniqueUsers = new Set(chats.map(chat => chat.lead_id)).size;
       const activeAgents = new Set(chats.map(chat => chat.agent_id)).size;
       
       // Get file statistics across all agents
@@ -131,7 +131,7 @@ const getDashboardAnalytics = async (req, res) => {
           name: agent.name,
           chat_count: agentChats.length,
           message_count: agentChats.reduce((sum, chat) => sum + (chat.messages ? chat.messages.length : 0), 0),
-          unique_users: new Set(agentChats.map(chat => chat.client_id)).size,
+          unique_users: new Set(agentChats.map(chat => chat.lead_id)).size,
           total_tokens: agentChats.reduce((sum, chat) => sum + (chat.total_tokens || 0), 0),
           total_cost: agentChats.reduce((sum, chat) => sum + (chat.total_cost || 0), 0)
         };
@@ -274,7 +274,7 @@ const getAgentAnalytics = async (req, res) => {
       const ai_messages = chats.filter(chat => chat.sender === 'assistant').length;
       const total_tokens = chats.reduce((sum, chat) => sum + (chat.tokens_used || 0), 0);
       const total_cost = chats.reduce((sum, chat) => sum + (chat.cost || 0), 0);
-      const unique_users = new Set(chats.map(chat => chat.user_id)).size;
+      const unique_users = new Set(chats.map(chat => chat.lead_id)).size;
       
       const total_files = files.length;
       const total_size = files.reduce((sum, file) => sum + (file.file_size || 0), 0);
@@ -520,13 +520,13 @@ const getUserEngagement = async (req, res) => {
       
       if (chatError) throw chatError;
       
-      // Group chats by user_id
+      // Group chats by lead_id
       const chatsByUser = {};
       userChats.forEach(chat => {
-        if (!chatsByUser[chat.user_id]) {
-          chatsByUser[chat.user_id] = [];
+        if (!chatsByUser[chat.lead_id]) {
+          chatsByUser[chat.lead_id] = [];
         }
-        chatsByUser[chat.user_id].push(chat);
+        chatsByUser[chat.lead_id].push(chat);
       });
       
       // Calculate user engagement metrics
@@ -536,7 +536,7 @@ const getUserEngagement = async (req, res) => {
         const uniqueDates = new Set(messageDates);
         
         return {
-          user_id: userId,
+          lead_id: userId,
           message_count: userMessages.length,
           first_interaction: new Date(Math.min(...userMessages.map(msg => new Date(msg.created_at)))),
           last_interaction: new Date(Math.max(...userMessages.map(msg => new Date(msg.created_at)))),
@@ -589,7 +589,7 @@ const getUserEngagement = async (req, res) => {
             avgMessagesPerUser: parseFloat(avgMessagesPerUser)
           },
           topUsers: userEngagement.slice(0, 10).map(user => ({
-            userId: user.user_id,
+            userId: user.lead_id,
             messageCount: user.message_count,
             firstInteraction: user.first_interaction,
             lastInteraction: user.last_interaction,
@@ -669,7 +669,7 @@ const getPerformanceMetrics = async (req, res) => {
       // Get all chats for conversation length distribution
       const { data: allChats, error: allChatsError } = await supabaseClient
         .from('chats')
-        .select('user_id')
+        .select('lead_id')
         .eq('agent_id', agentId)
         .gte('created_at', fromDate.toISOString());
       
@@ -678,10 +678,10 @@ const getPerformanceMetrics = async (req, res) => {
       // Calculate conversation length distribution
       const chatsByUser = {};
       allChats.forEach(chat => {
-        if (!chatsByUser[chat.user_id]) {
-          chatsByUser[chat.user_id] = 0;
+        if (!chatsByUser[chat.lead_id]) {
+          chatsByUser[chat.lead_id] = 0;
         }
-        chatsByUser[chat.user_id]++;
+        chatsByUser[chat.lead_id]++;
       });
        
       const conversationLengths = Object.values(chatsByUser);

@@ -6,7 +6,7 @@ const router = express.Router();
 router.get('/:agentId/chat', chatController.getChatHistory);
 
 // Send a message and get AI response
-router.post('/:agentId/chat', chatController.sendMessage);
+router.post('/message', chatController.sendMessage);
 
 // Get conversation summary
 router.get('/:agentId/chat/summary', chatController.summarizeConversation);

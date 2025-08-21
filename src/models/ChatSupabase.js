@@ -1,22 +1,19 @@
-const { supabaseClient } = require('../config/supabase');
+const { getSupabaseClient } = require('../config/supabase');
 const { v4: uuidv4 } = require('uuid');
 
 // Create a new chat session
-const create = async (agentId, clientId = null) => {
+const create = async (agentId, lead_id = null) => {
   try {
-    const id = uuidv4();
-    const { data, error } = await supabaseClient
-      .from('chats')
-      .insert({
-        id,
-        agent_id: agentId,
-        client_id: clientId,
-        messages: [],
-        total_tokens: 0,
-        total_cost: 0.00
-      })
-      .select()
-      .single();
+    const { data, error } = await getSupabaseClient()
+			.from("chats")
+			.insert({
+				agent_id: agentId,
+				lead_id: lead_id,
+				total_tokens: 0,
+				total_cost: 0.0,
+			})
+			.select()
+			.single();
     
     if (error) throw error;
     return data;
@@ -26,16 +23,15 @@ const create = async (agentId, clientId = null) => {
 }
 
 // Get chat by ID
-const getById = async (id) => {
+const getById = async (chat_id) => {
   try {
     // Using a join to get lead information
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('chats')
       .select(`
-        *,
-        leads!chats_lead_id_fkey (name, email, phone)
+        *
       `)
-      .eq('id', id)
+      .eq('chat_id', chat_id)
       .single();
     
     if (error) throw error;
@@ -60,7 +56,7 @@ const getById = async (id) => {
 const addMessage = async (chatId, message, tokenCount = 0, cost = 0) => {
   try {
     // Get current chat
-    const { data: currentChat, error: fetchError } = await supabaseClient
+    const { data: currentChat, error: fetchError } = await getSupabaseClient()
       .from('chats')
       .select('messages, total_tokens, total_cost')
       .eq('id', chatId)
@@ -84,7 +80,7 @@ const addMessage = async (chatId, message, tokenCount = 0, cost = 0) => {
     const updatedCost = currentCost + cost;
     
     // Update chat
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('chats')
       .update({
         messages: updatedMessages,
@@ -105,7 +101,7 @@ const addMessage = async (chatId, message, tokenCount = 0, cost = 0) => {
 // Link chat to a lead
 const linkToLead = async (chatId, leadId) => {
   try {
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('chats')
       .update({ lead_id: leadId })
       .eq('id', chatId)
@@ -122,12 +118,12 @@ const linkToLead = async (chatId, leadId) => {
 // Get recent chat history for a client
 const getRecentChatHistory = async (clientId, limit = 50) => {
   try {
-    const { data, error } = await supabaseClient
-      .from('chats')
-      .select('*')
-      .eq('client_id', clientId)
-      .order('created_at', { ascending: false })
-      .limit(limit);
+    const { data, error } = await getSupabaseClient()
+			.from("chats")
+			.select("*")
+			.eq("lead_id", clientId)
+			.order("created_at", { ascending: false })
+			.limit(limit);
     
     if (error) throw error;
     return data;
@@ -139,7 +135,7 @@ const getRecentChatHistory = async (clientId, limit = 50) => {
 // Get recent chats for an agent
 const getRecentChats = async (agentId, limit = 10) => {
   try {
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('chats')
       .select(`
         *,
@@ -166,10 +162,10 @@ const getRecentChats = async (agentId, limit = 10) => {
 // Clear chat history for a client
 const clearChatHistory = async (clientId) => {
   try {
-    const { data, error } = await supabaseClient
-      .from('chats')
-      .delete()
-      .eq('client_id', clientId);
+    const { data, error } = await getSupabaseClient()
+			.from("chats")
+			.delete()
+			.eq("lead_id", clientId);
     
     if (error) throw error;
     return { success: true, message: 'Chat history cleared' };
@@ -181,7 +177,7 @@ const clearChatHistory = async (clientId) => {
 // Get conversation summary
 const getConversationSummary = async (chatId) => {
   try {
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('chats')
       .select('messages')
       .eq('id', chatId)
@@ -201,6 +197,23 @@ const getConversationSummary = async (chatId) => {
   }
 }
 
+// Update chat record
+const update = async (chat_id, updateData) => {
+  try {
+    const { data, error } = await getSupabaseClient()
+      .from('chats')
+      .update(updateData)
+      .eq('chat_id', chat_id)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    throw error;
+  }
+}
+
 module.exports = {
   create,
   getById,
@@ -209,5 +222,6 @@ module.exports = {
   getRecentChatHistory,
   getRecentChats,
   clearChatHistory,
-  getConversationSummary
+  getConversationSummary,
+  update
 };

@@ -1,23 +1,17 @@
-const { supabaseClient } = require('../config/supabase');
+const { getSupabaseClient } = require('../config/supabase');
 const ragService = require('../services/ragService');
 const embeddingsService = require('../services/embeddingsService');
 const costService = require('../services/costService');
 const ChatSupabase = require('../models/ChatSupabase');
+const AgentSupabase = require("../models/AgentSupabase");
 
 // Get chat history for an agent
 const getChatHistory = async (req, res) => {
     try {
-      if (!supabaseClient) {
-        return res.status(503).json({ 
-          error: 'Database not configured',
-          message: 'Supabase connection is not available' 
-        });
-      }
-
       const { agentId } = req.params;
       const { limit = 50, offset = 0 } = req.query;
       
-      const { data, error, count } = await supabaseClient
+      const { data, error, count } = await getSupabaseClient()
         .from('chats')
         .select('*', { count: 'exact' })
         .eq('agent_id', agentId)
@@ -47,119 +41,99 @@ const getChatHistory = async (req, res) => {
 // Send a message and get AI response
 const sendMessage = async (req, res) => {
     try {
-      const { agentId } = req.params;
-      const { message, userId, lead_id } = req.body;
-      
-      if (!message) {
-        return res.status(400).json({ 
-          error: 'Validation error',
-          message: 'Message is required' 
-        });
-      }
-      
-      console.log(`💬 Processing message for agent ${agentId}:`, message.substring(0, 100) + '...');
-      
-      // Store user message
-      let userChat = null;
-      if (supabaseClient) {
-        // Include lead_id if provided
-        const userMessage = { role: 'user', content: message };
-        const insertData = {
-          agent_id: agentId,
-          client_id: userId || 'anonymous',
-          messages: [userMessage],
-          total_tokens: 0,
-          total_cost: 0
-        };
-        
-        if (lead_id) {
-          insertData.lead_id = lead_id;
-        }
-        
-        const { data: userData, error: userError } = await supabaseClient
-          .from('chats')
-          .insert(insertData)
-          .select()
-          .single();
-        
-        if (userError) throw userError;
-        userChat = userData;
-      }
-      
-      // Get relevant context using RAG
-      const relevantContent = await embeddingsService.searchRelevantContent(agentId, message);
-      
-      // Generate AI response
-      const aiResponse = await ragService.generateResponse({
-        agentId,
-        message,
-        relevantContent,
-        chatHistory: await getRecentChatHistory(agentId)
-      });
-      
-      // Store AI response
-      let aiChat = null;
-      if (supabaseClient) {
-        const assistantMessage = { role: 'assistant', content: aiResponse.response };
-        const insertData = {
-          agent_id: agentId,
-          client_id: userId || 'anonymous',
-          messages: [assistantMessage],
-          total_tokens: aiResponse.tokensUsed,
-          total_cost: aiResponse.cost
-        };
-        
-        if (lead_id) {
-          insertData.lead_id = lead_id;
-        }
-        
-        const { data: aiData, error: aiError } = await supabaseClient
-          .from('chats')
-          .insert(insertData)
-          .select()
-          .single();
-        
-        if (aiError) throw aiError;
-        aiChat = aiData;
-        
-        // Update cost tracking
-        await costService.trackCost({
-          agentId,
-          userId: userId || 'anonymous',
-          tokensUsed: aiResponse.tokensUsed,
-          cost: aiResponse.cost,
-          operation: 'chat'
-        });
-      }
-      
-      console.log(`✅ Generated response for agent ${agentId} (${aiResponse.tokensUsed} tokens, $${aiResponse.cost.toFixed(4)})`);
-      
-      res.json({
-        success: true,
-        data: {
-          userMessage: userChat,
-          aiResponse: aiChat,
-          response: aiResponse.response,
-          tokensUsed: aiResponse.tokensUsed,
-          cost: aiResponse.cost,
-          relevantSources: relevantContent.length
-        }
-      });
-    } catch (error) {
-      console.error('❌ Error processing message:', error.message);
-      res.status(500).json({ 
-        error: 'Failed to process message',
-        message: error.message 
-      });
-    }
+			const { message, sender, chat_id, agent_id } = req.body;
+
+			if (!message) {
+				return res.status(400).json({
+					error: "Validation error",
+					message: "Message is required",
+				});
+			}
+
+			// Get relevant context using RAG
+			const relevantContent = await embeddingsService.searchRelevantContent(
+				agent_id,
+				message
+			);
+			console.log("relevantContent", relevantContent);
+			// Generate AI response
+			const agent = await AgentSupabase.getById(agent_id);
+			const chatHistory = await getRecentChatHistory(chat_id);
+
+			const aiResponse = await ragService.generateResponse(
+				agent,
+				message,
+				relevantContent,
+				chatHistory
+			);
+
+			// Store AI response
+			let aiChat = null;
+
+			const { data: userData, error: userError } = await getSupabaseClient()
+				.from("chat_logs")
+				.insert({
+					chat_id,
+					role: sender,
+					message,
+					total_tokens: 0,
+					total_cost: 0,
+				})
+				.select()
+				.single();
+
+			if (userError) throw userError;
+
+			const { data: aiData, error: aiError } = await getSupabaseClient()
+				.from("chat_logs")
+				.insert({
+					chat_id: chat_id,
+					message: aiResponse.response,
+					role: "assistant",
+					total_tokens: aiResponse.tokenUsage?.totalTokens,
+					total_cost: aiResponse.cost,
+				})
+				.select()
+				.single();
+
+			if (aiError) throw aiError;
+			aiChat = aiData;
+
+			// update chat total_tokens and total_cost add this value to the previous value of the chat_id
+			const chatDataForUpdate = await ChatSupabase.getById(chat_id);
+
+			const total_tokens =
+				chatDataForUpdate.total_tokens + aiResponse.tokenUsage?.totalTokens;
+			const total_cost = chatDataForUpdate.total_cost + aiResponse.cost;
+
+			await ChatSupabase.update(chat_id, {
+				total_tokens,
+				total_cost,
+			});
+
+			res.json({
+				success: true,
+				data: {
+					response: aiResponse.response,
+					tokensUsed: aiResponse.tokensUsed,
+					cost: aiResponse.cost,
+				},
+			});
+		} catch (error) {
+			console.error("❌ Error processing message:", error.message);
+			res.status(500).json({
+				error: "Failed to process message",
+				message: error.message,
+			});
+		}
 }
 
 // Summarize conversation for an agent
 const summarizeConversation = async (req, res) => {
   try {
-    const { agentId } = req.params;
+    const { agent_id } = req.params;
     
-    if (!supabaseClient) {
+    if (!getSupabaseClient()) {
       return res.status(503).json({ 
         error: 'Database not configured',
         message: 'Supabase connection is not available' 
@@ -195,7 +169,7 @@ const summarizeConversation = async (req, res) => {
 // Clear chat history for an agent
 const clearChatHistory = async (req, res) => {
     try {
-      if (!supabaseClient) {
+      if (!getSupabaseClient()) {
         return res.status(503).json({ 
           error: 'Database not configured',
           message: 'Supabase connection is not available' 
@@ -204,7 +178,7 @@ const clearChatHistory = async (req, res) => {
 
       const { agentId } = req.params;
       
-      const { data, error, count } = await supabaseClient
+      const { data, error, count } = await getSupabaseClient()
         .from('chats')
         .delete()
         .eq('agent_id', agentId);
@@ -226,16 +200,16 @@ const clearChatHistory = async (req, res) => {
 }
 
 // Helper method to get recent chat history
-const getRecentChatHistory = async (agentId, limit = 10) => {
+const getRecentChatHistory = async (chat_id, limit = 5) => {
     try {
-      if (!supabaseClient) {
+      if (!getSupabaseClient()) {
         return [];
       }
 
-      const { data, error } = await supabaseClient
-        .from('chats')
+      const { data, error } = await getSupabaseClient()
+        .from('chat_logs')
         .select('*')
-        .eq('agent_id', agentId)
+        .eq('chat_id', chat_id)
         .order('created_at', { ascending: false })
         .limit(limit);
       
@@ -254,12 +228,12 @@ const getRecentChats = async (req, res) => {
     const { userId } = req.params;
     const { limit = 10, offset = 0 } = req.query;
     
-    const { data, error, count } = await supabaseClient
-      .from('chats')
-      .select('*, leads(*)', { count: 'exact' })
-      .eq('client_id', userId)
-      .order('created_at', { ascending: false })
-      .range(offset, parseInt(offset) + parseInt(limit) - 1);
+    const { data, error, count } = await getSupabaseClient()
+			.from("chats")
+			.select("*, leads(*)", { count: "exact" })
+			.eq("lead_id", userId)
+			.order("created_at", { ascending: false })
+			.range(offset, parseInt(offset) + parseInt(limit) - 1);
     
     if (error) throw error;
     

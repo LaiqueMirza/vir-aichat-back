@@ -8,27 +8,7 @@ function initializeSupabase() {
   // Try to use SUPABASE_ANON_KEY first, fall back to SERVICE_ROLE_KEY if needed
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
-  
-  console.log('🔍 SUPABASE_URL debug:', {
-    exists: !!supabaseUrl,
-    length: supabaseUrl ? supabaseUrl.length : 0,
-    value: supabaseUrl ? supabaseUrl.substring(0, 8) + '...' : 'undefined'
-  });
-  
-  console.log('🔍 SUPABASE_KEY debug:', {
-    exists: !!supabaseKey,
-    length: supabaseKey ? supabaseKey.length : 0,
-    value: supabaseKey ? supabaseKey.substring(0, 8) + '...' : 'undefined',
-    usingServiceRole: supabaseKey === process.env.SUPABASE_SERVICE_ROLE_KEY,
-    usingAnonKey: supabaseKey === process.env.SUPABASE_ANON_KEY
-  });
-  
-  if (!supabaseUrl || supabaseUrl === 'your_supabase_url_here' ||
-      !supabaseKey || supabaseKey === 'your_supabase_service_role_key_here') {
-    console.warn('⚠️ SUPABASE credentials not configured - database features will be disabled');
-    return null;
-  }
-  
+
   try {
     console.log('🔄 Creating Supabase client...');
     const client = createClient(supabaseUrl, supabaseKey, {
@@ -158,32 +138,57 @@ const uploadToStorage = async (bucketName, filePath, fileBuffer, contentType) =>
       throw new Error('Supabase Storage not available');
     }
     
-    // Check if bucket exists, create if not
-    const { data: buckets } = await storage.listBuckets();
-    const bucketExists = buckets.some(bucket => bucket.name === bucketName);
+    // // Check if bucket exists, create if not
+    // const { data: buckets, error: bucketsError } = await storage.listBuckets();
+    // if (bucketsError) {
+    //   console.error('❌ Error listing buckets:', bucketsError.message);
+    //   throw bucketsError;
+    // }
     
-    if (!bucketExists) {
-      console.log(`🔄 Creating bucket: ${bucketName}`);
-      await storage.createBucket(bucketName, {
-        public: false,
-        fileSizeLimit: 10485760 // 10MB
-      });
-    }
+    // const bucketExists = buckets.some(bucket => bucket.name === bucketName);
+    
+    // if (!bucketExists) {
+    //   console.log(`🔄 Creating bucket: ${bucketName}`);
+    //   const { error: createError } = await storage.createBucket(bucketName, {
+    //     public: false,
+    //     fileSizeLimit: 10485760 // 10MB
+    //   });
+      
+    //   if (createError) {
+    //     console.error('❌ Error creating bucket:', createError.message);
+    //     throw createError;
+    //   }
+      
+      // Set up RLS policies for the bucket
+    //    const { error: policyError } = await storage.from(bucketName).createPolicy(
+    //      'Enable access to agent files',
+    //      {
+    //        definition: true,
+    //        check: true,
+    //        allowedOperations: ['SELECT', 'INSERT', 'UPDATE', 'DELETE']
+    //      }
+    //    );
+       
+    //    if (policyError) {
+    //      console.error('❌ Error setting bucket policy:', policyError.message);
+    //      throw policyError;
+    //    }
+    // }
     
     // Upload file
-    const { data, error } = await storage
-      .from(bucketName)
-      .upload(filePath, fileBuffer, {
-        contentType,
-        upsert: true
-      });
-    
-    if (error) throw error;
-    
-    // Get public URL
-    const { data: urlData } = storage
-      .from(bucketName)
-      .getPublicUrl(filePath);
+     const { data, error } = await storage
+       .from(bucketName)
+       .upload(filePath, fileBuffer, {
+         contentType,
+         upsert: true
+       });
+     
+     if (error) throw error;
+     
+     // Get public URL
+     const { data: urlData } = storage
+       .from(bucketName)
+       .getPublicUrl(filePath);
     
     return {
       path: data.path,

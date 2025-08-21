@@ -4,15 +4,15 @@ const { chunkDocument, optimizeChunks } = require('../utils/chunker');
 const tokenCounter = require('../utils/tokenCounter');
 
 // Process and store document embeddings
-const processDocument = async (agentId, fileName, content, metadata = {}) => {
+const processDocument = async (agentId, fileId, content, metadata = {}) => {
     try {
-      console.log(`📄 Processing document: ${fileName} for agent: ${agentId}`);
+      console.log(`📄 Processing document: ${fileId} for agent: ${agentId}`);
       
       // Clean and chunk the content
-      const chunks = await chunkDocument(content, fileName, agentId, metadata);
+      const chunks = await chunkDocument(content, fileId, agentId, metadata);
       const optimizedChunks = optimizeChunks(chunks);
       
-      console.log(`📊 Created ${optimizedChunks.length} chunks from ${fileName}`);
+      console.log(`📊 Created ${optimizedChunks.length} chunks from ${fileId}`);
       
       const results = [];
       let totalTokens = 0;
@@ -22,7 +22,7 @@ const processDocument = async (agentId, fileName, content, metadata = {}) => {
       const batchSize = 10;
       for (let i = 0; i < optimizedChunks.length; i += batchSize) {
         const batch = optimizedChunks.slice(i, i + batchSize);
-        const batchResults = await processBatch(agentId, batch);
+        const batchResults = await processBatch(fileId, batch);
         
         results.push(...batchResults);
         
@@ -54,7 +54,7 @@ const processDocument = async (agentId, fileName, content, metadata = {}) => {
 }
 
 // Process a batch of chunks
-const processBatch = async (agentId, chunks) => {
+const processBatch = async (fileId, chunks) => {
     const results = [];
     
     if (!embeddings) {
@@ -78,7 +78,7 @@ const processBatch = async (agentId, chunks) => {
         const embedding = await embeddings.embedQuery(chunk.content);
         
         // Store in vector database
-        await storeEmbedding(agentId, chunk.content, embedding, chunk.metadata);
+        await storeEmbedding(fileId, chunk.content, embedding);
         
         results.push({
           chunkId: chunk.metadata.documentId,
@@ -103,9 +103,8 @@ const processBatch = async (agentId, chunks) => {
   }
 
 // Search for relevant content using embeddings
-const searchRelevantContent = async (agentId, query, limit = 5, threshold = 0.7) => {
+const searchRelevantContent = async (agentId, query, limit = 3, threshold = 0.3) => {
     try {
-      console.log(`🔍 Searching for relevant content for agent: ${agentId}`);
       
       if (!embeddings) {
         console.warn('⚠️ Skipping content search - OpenAI not configured');
