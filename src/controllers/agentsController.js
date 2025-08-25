@@ -9,11 +9,37 @@ const path = require('path');
 // Get all agents
 const getAllAgents = async (req, res) => {
     try {
-      let data = await AgentSupabase.getAllByUser();
+      let agents = await AgentSupabase.getAllByUser();
+
+      // Get analytics for each agent
+      const agentsWithAnalytics = await Promise.all(
+        agents.map(async (agent) => {
+          try {
+            const analytics = await AgentSupabase.getStats(agent.agent_id);
+            return {
+              ...agent,
+              analytics
+            };
+          } catch (error) {
+            console.error(`❌ Error fetching analytics for agent ${agent.id}:`, error.message);
+            // Return agent with default analytics if there's an error
+            return {
+              ...agent,
+              analytics: {
+                totalChats: 0,
+                totalLeads: 0,
+                totalFiles: 0,
+                totalTokens: 0,
+                totalCost: '0.0000'
+              }
+            };
+          }
+        })
+      );
 
       res.json({
         success: true,
-        data: data
+        data: agentsWithAnalytics
       });
     } catch (error) {
       console.error('❌ Error fetching agents:', error.message);

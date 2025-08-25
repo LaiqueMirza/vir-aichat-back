@@ -5,6 +5,9 @@ const router = express.Router();
 // GET /api/analytics/dashboard - Get dashboard analytics
 router.get('/dashboard', analyticsController.getDashboardAnalytics);
 
+// POST /api/analytics/dashboard - Get dashboard analytics (POST endpoint)
+router.post('/dashboard', analyticsController.postDashboardAnalytics);
+
 // GET /api/analytics/:agentId - Get agent analytics
 router.get('/:agentId', analyticsController.getAgentAnalytics);
 

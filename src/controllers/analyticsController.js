@@ -1,10 +1,11 @@
-const { supabaseClient } = require('../config/supabase');
+const { getSupabaseClient } = require('../config/supabase');
 const costService = require('../services/costService');
 
 // Get dashboard analytics for all agents
 const getDashboardAnalytics = async (req, res) => {
-    try {
-      if (!supabaseClient) {
+  try {
+    const supabaseClient = getSupabaseClient();
+    if (!supabaseClient) {
         // Return mock data when database is not configured
         return res.json({
           period: req.query.period || '30d',
@@ -733,8 +734,105 @@ const getPerformanceMetrics = async (req, res) => {
     }
 }
 
+// POST dashboard analytics - same functionality as GET but accepts POST requests
+const postDashboardAnalytics = async (req, res) => {
+    try {
+      const supabaseClient = getSupabaseClient();
+      if (!supabaseClient) {
+        // Return mock data when database is not configured
+        return res.json({
+          success: true,
+          data: {
+            totalChats: 0,
+            totalLeads: 0,
+            totalCost: 0,
+            totalTokens: 0,
+            totalFiles: 0
+          }
+        });
+      }
+
+      // const { period = '30d' } = req.body || req.query;
+      
+      // // Calculate date range based on period
+      // let daysAgo = 30;
+      // switch (period) {
+      //   case '7d':
+      //     daysAgo = 7;
+      //     break;
+      //   case '30d':
+      //     daysAgo = 30;
+      //     break;
+      //   case '90d':
+      //     daysAgo = 90;
+      //     break;
+      //   default:
+      //     daysAgo = 30;
+      // }
+      
+      // // Calculate the date from X days ago
+      // const fromDate = new Date();
+      // fromDate.setDate(fromDate.getDate() - daysAgo);
+      
+      // Get overall chat statistics across all agents
+      const { data: chats, error: chatsError } = await supabaseClient
+        .from('chats')
+        .select('*')
+        // .gte('created_at', fromDate.toISOString());
+      
+      if (chatsError) throw chatsError;
+      
+      // Calculate chat statistics
+      const totalChats = chats.length;
+      const totalTokens = chats.reduce((sum, chat) => sum + (chat.total_tokens || 0), 0);
+      const totalCost = chats.reduce((sum, chat) => sum + (chat.total_cost || 0), 0);
+      
+      // Get file statistics across all agents
+      const { data: files, error: filesError } = await supabaseClient
+        .from('files')
+        .select('*')
+        // .gte('created_at', fromDate.toISOString());
+      
+      if (filesError) throw filesError;
+      
+      // Calculate file statistics
+      const totalFiles = files.length;
+      
+      // Get lead statistics across all agents
+      const { data: leads, error: leadsError } = await supabaseClient
+        .from('leads')
+        .select('*')
+        // .gte('created_at', fromDate.toISOString());
+      
+      if (leadsError) throw leadsError;
+      
+      // Calculate lead statistics
+      const totalLeads = leads.length;
+      
+      // Return structured response
+      res.json({
+        success: true,
+        data: {
+          totalChats,
+          totalLeads,
+          totalCost: totalCost,
+          totalTokens,
+          totalFiles
+        }
+      });
+    } catch (error) {
+      console.error('❌ Error fetching dashboard analytics (POST):', error.message);
+      res.status(500).json({ 
+        success: false,
+        error: 'Failed to fetch dashboard analytics',
+        message: error.message 
+      });
+    }
+}
+
 module.exports = {
   getDashboardAnalytics,
+  postDashboardAnalytics,
   getAgentAnalytics,
   getCostBreakdown,
   getUserEngagement,

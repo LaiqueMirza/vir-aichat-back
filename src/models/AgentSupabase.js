@@ -118,6 +118,14 @@ const getStats = async (id) => {
     
     if (leadError) throw leadError;
     
+    // Get total file count
+    const { count: fileCount, error: fileError } = await getSupabaseClient()
+      .from('files')
+      .select('*', { count: 'exact', head: true })
+      .eq('agent_id', id);
+    
+    if (fileError) throw fileError;
+    
     // Get total token usage
     const { data: tokenData, error: tokenError } = await getSupabaseClient()
       .from('chats')
@@ -139,10 +147,11 @@ const getStats = async (id) => {
     const totalCost = costData.reduce((sum, chat) => sum + (parseFloat(chat.total_cost) || 0), 0);
     
     return {
-      chats: chatCount,
-      leads: leadCount,
-      tokens: totalTokens,
-      cost: totalCost.toFixed(4)
+      totalChats: chatCount,
+      totalLeads: leadCount,
+      totalFiles: fileCount,
+      totalTokens: totalTokens,
+      totalCost: totalCost.toFixed(4)
     };
   } catch (error) {
     throw error;
