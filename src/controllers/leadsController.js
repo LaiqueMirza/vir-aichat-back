@@ -1,9 +1,9 @@
-const { supabaseClient } = require('../config/supabase');
+const { getSupabaseClient } = require('../config/supabase');
 const ragService = require('../services/ragService');
 const LeadSupabase = require('../models/LeadSupabase');
+const Lead = require('../models/Lead');
 const ChatSupabase = require("../models/ChatSupabase");
 const AgentSupabase = require("../models/AgentSupabase");
-// Removed Lead model import as we now use LeadSupabase for all operations
 
 // Get all leads for an agent
 const getAgentLeads = async (req, res) => {
@@ -88,7 +88,7 @@ const extractLead = async (req, res) => {
       
       // Get conversation history
       let chatHistory = [];
-      const { data: chats, error } = await supabaseClient
+      const { data: chats, error } = await getSupabaseClient()
         .from('chats')
         .select('*')
         .eq('agent_id', agentId)
@@ -284,28 +284,12 @@ const getAllLeads = async (req, res) => {
   try {
     const { status, limit = 50, offset = 0 } = req.query;
     
-    // Get all leads using LeadSupabase model
-    let leads;
-    if (status) {
-      leads = await LeadSupabase.getByStatus(null, status);
-    } else {
-      // Since there's no direct getAllLeads method in LeadSupabase, we'll use a workaround
-      // by fetching from Supabase directly
-      const { data, error } = await supabaseClient
-        .from('leads')
-        .select('*')
-        .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
-      
-      if (error) throw error;
-      leads = data;
-    }
-    
-    // Apply manual pagination if needed
-    const paginatedLeads = leads.slice(0, parseInt(limit));
+    // Get all leads with agent information and chat counts using Lead model
+    const leads = await Lead.getAll(status, parseInt(limit), parseInt(offset));
     
     res.json({
       success: true,
-      data: paginatedLeads,
+      data: leads,
       pagination: {
         limit: parseInt(limit),
         offset: parseInt(offset),

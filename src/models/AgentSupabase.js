@@ -56,7 +56,7 @@ const update = async (id, updates) => {
     const { data, error } = await getSupabaseClient()
       .from('agents')
       .update(filteredUpdates)
-      .eq('id', id)
+      .eq('agent_id', id)
       .select()
       .single();
     

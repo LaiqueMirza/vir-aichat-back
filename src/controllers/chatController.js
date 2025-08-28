@@ -3,6 +3,7 @@ const ragService = require('../services/ragService');
 const embeddingsService = require('../services/embeddingsService');
 const costService = require('../services/costService');
 const ChatSupabase = require('../models/ChatSupabase');
+const Chat = require('../models/Chat');
 const AgentSupabase = require("../models/AgentSupabase");
 
 // Get chat history for an agent
@@ -255,11 +256,32 @@ const getRecentChats = async (req, res) => {
   }
 }
 
+// Get all recent chats for admin dashboard
+const getAllRecentChats = async (req, res) => {
+  try {
+    const { limit = 20 } = req.query;
+    
+    const chats = await Chat.getRecent(parseInt(limit));
+    
+    res.json({
+      success: true,
+      data: chats
+    });
+  } catch (error) {
+    console.error('❌ Error fetching all recent chats:', error.message);
+    res.status(500).json({ 
+      error: 'Failed to fetch all recent chats',
+      message: error.message 
+    });
+  }
+}
+
 module.exports = {
   getChatHistory,
   sendMessage,
   summarizeConversation,
   clearChatHistory,
   getRecentChatHistory,
-  getRecentChats
+  getRecentChats,
+  getAllRecentChats
 };

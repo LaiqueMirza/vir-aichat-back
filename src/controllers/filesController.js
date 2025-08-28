@@ -1,4 +1,4 @@
-const { supabaseClient } = require('../config/supabase');
+const { getSupabaseClient } = require('../config/supabase');
 const FileSupabase = require('../models/FileSupabase');
 const embeddingsService = require('../services/embeddingsService');
 const fileParser = require('../utils/fileParser');
@@ -147,49 +147,82 @@ const uploadFile = async (req, res) => {
 
 // Delete file
 const deleteFile = async (req, res) => {
-    try {
-      const { agentId, fileId } = req.params;
-      
-      // Get file info
-      const { data: file, error } = await supabaseClient
-        .from('files')
-        .select('*')
-        .eq('id', fileId)
-        .eq('agent_id', agentId)
-        .single();
-      
-      if (error || !file) {
-        return res.status(404).json({ 
-          error: 'File not found',
-          message: 'File does not exist or does not belong to this agent' 
-        });
-      }
-      
-      // Delete embeddings
-      await embeddingsService.deleteAgentEmbeddings(agentId, fileId);
-      
-      // Delete file record
-      const deletedFile = await FileSupabase.deleteFile(fileId);
-      
-      // Delete physical file
-      if (file.file_url) {
-        await fs.unlink(file.file_url).catch(console.error);
-      }
-      
-      console.log(`✅ Deleted file: ${file.file_name}`);
-      res.json({
-        success: true,
-        message: 'File deleted successfully',
-        data: deletedFile
-      });
-    } catch (error) {
-      console.error('❌ Error deleting file:', error.message);
-      res.status(500).json({ 
-        error: 'Failed to delete file',
-        message: error.message 
+  try {
+    const { fileId } = req.params;
+    
+    // Get file info first to check if it exists
+    const { data: file, error: fetchError } = await getSupabaseClient()
+      .from('files')
+      .select('*')
+      .eq('file_id', fileId)
+      .single();
+    
+    if (fetchError || !file) {
+      return res.status(404).json({ 
+        error: 'File not found',
+        message: 'File does not exist in the database' 
       });
     }
-}
+    
+    console.log(`🗑️ Starting deletion process for file: ${file.file_name}`);
+    
+    // Store file info for cleanup in case of partial failure
+    const fileInfo = {
+      fileId: file.file_id,
+      fileName: file.file_name,
+      storagePath: file.storage_path,
+      fileUrl: file.file_url
+    };
+    
+    // Step 1: Delete vector embeddings
+    try {
+      await embeddingsService.deleteFileEmbeddings(fileId);
+      console.log(`✅ Deleted embeddings for file: ${fileId}`);
+    } catch (embeddingError) {
+      console.error(`❌ Failed to delete embeddings for file ${fileId}:`, embeddingError.message);
+      throw new Error(`Failed to delete file embeddings: ${embeddingError.message}`);
+    }
+    
+    // Step 2: Delete file record from database (includes storage deletion)
+    try {
+      const deletedFile = await FileSupabase.deleteFile(fileId);
+      console.log(`✅ Deleted file record and storage for: ${fileInfo.fileName}`);
+    } catch (dbError) {
+      console.error(`❌ Failed to delete file record for ${fileId}:`, dbError.message);
+      throw new Error(`Failed to delete file from database: ${dbError.message}`);
+    }
+    
+    // Step 3: Delete physical file from local storage (if exists)
+    if (fileInfo.fileUrl && fileInfo.fileUrl.startsWith('/')) {
+      try {
+        await fs.unlink(fileInfo.fileUrl);
+        console.log(`✅ Deleted physical file: ${fileInfo.fileUrl}`);
+      } catch (fsError) {
+        // Log warning but don't fail the entire operation for local file cleanup
+        console.warn(`⚠️ Could not delete physical file ${fileInfo.fileUrl}:`, fsError.message);
+      }
+    }
+    
+    console.log(`✅ Successfully deleted file: ${fileInfo.fileName}`);
+    
+    res.status(200).json({
+      success: true,
+      message: 'File deleted successfully',
+      deletedFile: {
+        fileId: fileInfo.fileId,
+        fileName: fileInfo.fileName
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Error deleting file:', error.message);
+    
+    res.status(500).json({ 
+      error: 'Failed to delete file',
+      message: error.message 
+    });
+  }
+};
 
 // Reprocess file embeddings
 const reprocessFile = async (req, res) => {

@@ -1,13 +1,13 @@
-const { supabaseClient } = require('../config/supabase');
+const { getSupabaseClient } = require('../config/supabase');
 const { v4: uuidv4 } = require('uuid');
 
 // Create a new agent
 const create = async (name, context) => {
   try {
     const id = uuidv4();
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('agents')
-      .insert([{ id, name, context }])
+      .insert([{ agent_id: id, name, context }])
       .select()
       .single();
       
@@ -22,7 +22,7 @@ const create = async (name, context) => {
 const getAll = async () => {
   try {
     // Get all agents
-    const { data: agents, error: agentsError } = await supabaseClient
+    const { data: agents, error: agentsError } = await getSupabaseClient()
       .from('agents')
       .select('*')
       .order('created_at', { ascending: false });
@@ -32,26 +32,26 @@ const getAll = async () => {
     // For each agent, get file count, chat count, and lead count
     const agentsWithCounts = await Promise.all(agents.map(async (agent) => {
       // Get file count
-      const { count: fileCount, error: fileError } = await supabaseClient
+      const { count: fileCount, error: fileError } = await getSupabaseClient()
         .from('files')
         .select('id', { count: 'exact', head: true })
-        .eq('agent_id', agent.id);
+        .eq('agent_id', agent.agent_id);
         
       if (fileError) throw fileError;
       
       // Get chat count
-      const { count: chatCount, error: chatError } = await supabaseClient
+      const { count: chatCount, error: chatError } = await getSupabaseClient()
         .from('chats')
         .select('id', { count: 'exact', head: true })
-        .eq('agent_id', agent.id);
+        .eq('agent_id', agent.agent_id);
         
       if (chatError) throw chatError;
       
       // Get lead count
-      const { count: leadCount, error: leadError } = await supabaseClient
+      const { count: leadCount, error: leadError } = await getSupabaseClient()
         .from('leads')
         .select('id', { count: 'exact', head: true })
-        .eq('agent_id', agent.id);
+        .eq('agent_id', agent.agent_id);
         
       if (leadError) throw leadError;
       
@@ -73,17 +73,17 @@ const getAll = async () => {
 const getById = async (id) => {
   try {
     // Get agent by ID
-    const { data: agent, error: agentError } = await supabaseClient
+    const { data: agent, error: agentError } = await getSupabaseClient()
       .from('agents')
       .select('*')
-      .eq('id', id)
+      .eq('agent_id', id)
       .single();
       
     if (agentError) throw agentError;
     if (!agent) return null;
     
     // Get file count
-    const { count: fileCount, error: fileError } = await supabaseClient
+    const { count: fileCount, error: fileError } = await getSupabaseClient()
       .from('files')
       .select('id', { count: 'exact', head: true })
       .eq('agent_id', id);
@@ -91,7 +91,7 @@ const getById = async (id) => {
     if (fileError) throw fileError;
     
     // Get chat count
-    const { count: chatCount, error: chatError } = await supabaseClient
+    const { count: chatCount, error: chatError } = await getSupabaseClient()
       .from('chats')
       .select('id', { count: 'exact', head: true })
       .eq('agent_id', id);
@@ -99,7 +99,7 @@ const getById = async (id) => {
     if (chatError) throw chatError;
     
     // Get lead count
-    const { count: leadCount, error: leadError } = await supabaseClient
+    const { count: leadCount, error: leadError } = await getSupabaseClient()
       .from('leads')
       .select('id', { count: 'exact', head: true })
       .eq('agent_id', id);
@@ -120,10 +120,10 @@ const getById = async (id) => {
 // Update agent
 const update = async (id, name, context) => {
   try {
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('agents')
       .update({ name, context })
-      .eq('id', id)
+      .eq('agent_id', id)
       .select()
       .single();
       
@@ -137,10 +137,10 @@ const update = async (id, name, context) => {
 // Delete agent
 const deleteAgent = async (id) => {
   try {
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('agents')
       .delete()
-      .eq('id', id)
+      .eq('agent_id', id)
       .select()
       .single();
       
@@ -154,7 +154,7 @@ const deleteAgent = async (id) => {
 // Get agent files
 const getFiles = async (agentId) => {
   try {
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('files')
       .select('*')
       .eq('agent_id', agentId)
@@ -171,7 +171,7 @@ const getFiles = async (agentId) => {
 const getChats = async (agentId) => {
   try {
     // Get chats for the agent
-    const { data: chats, error: chatsError } = await supabaseClient
+    const { data: chats, error: chatsError } = await getSupabaseClient()
       .from('chats')
       .select('*')
       .eq('agent_id', agentId)
@@ -184,7 +184,7 @@ const getChats = async (agentId) => {
       if (!chat.lead_id)
 				return { ...chat, client_name: null, client_email: null };
       
-      const { data: lead, error: leadError } = await supabaseClient
+      const { data: lead, error: leadError } = await getSupabaseClient()
 				.from("leads")
 				.select("name, email")
 				.eq("id", chat.lead_id)
@@ -208,7 +208,7 @@ const getChats = async (agentId) => {
 // Get agent leads
 const getLeads = async (agentId) => {
   try {
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('leads')
       .select('*')
       .eq('agent_id', agentId)
@@ -224,7 +224,7 @@ const getLeads = async (agentId) => {
 // Get agent cost summary
 const getCostSummary = async (agentId, startDate = null, endDate = null) => {
   try {
-    let query = supabaseClient
+    let query = getSupabaseClient()
       .from('chats')
       .select('*')
       .eq('agent_id', agentId);

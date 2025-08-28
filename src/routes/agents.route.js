@@ -13,7 +13,7 @@ router.get('/:agent_id', agentsController.getAgentById);
 router.post("/", upload.array("file", 10), agentsController.createAgent);
 
 // Update agent
-router.put('/:agent_id', agentsController.updateAgent);
+router.put('/:agent_id', upload.array("file", 10), agentsController.updateAgent);
 
 // Delete agent
 router.delete('/:agent_id', agentsController.deleteAgent);

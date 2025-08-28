@@ -113,10 +113,27 @@ const deleteAgentEmbeddings = async (agentId) => {
   }
 };
 
+// Delete embeddings for a specific file
+const deleteFileEmbeddings = async (fileId) => {
+  try {
+    const { error } = await getSupabaseClient()
+      .from('files_vectors')
+      .delete()
+      .eq('file_id', fileId);
+    
+    if (error) throw error;
+    console.log(`✅ Deleted embeddings for file: ${fileId}`);
+  } catch (err) {
+    console.error('❌ Error deleting file embeddings:', err.message);
+    throw err;
+  }
+};
+
 module.exports = {
   supabase,
   initializeVectorTable,
   storeEmbedding,
   searchSimilarEmbeddings,
-  deleteAgentEmbeddings
+  deleteAgentEmbeddings,
+  deleteFileEmbeddings
 };

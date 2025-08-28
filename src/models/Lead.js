@@ -1,11 +1,11 @@
-const { supabaseClient } = require('../config/supabase');
+const { getSupabaseClient } = require('../config/supabase');
 const { v4: uuidv4 } = require('uuid');
 
 // Create a new lead
 const create = async (agentId, name = null, phone = null, email = null, followUp = null) => {
   try {
     const id = uuidv4();
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('leads')
       .insert([{ 
         id, 
@@ -30,20 +30,20 @@ const create = async (agentId, name = null, phone = null, email = null, followUp
 const getById = async (id) => {
   try {
     // Get lead data
-    const { data: lead, error: leadError } = await supabaseClient
+    const { data: lead, error: leadError } = await getSupabaseClient()
       .from('leads')
       .select('*')
-      .eq('id', id)
+      .eq('lead_id', id)
       .single();
       
     if (leadError) throw leadError;
     if (!lead) return null;
     
     // Get agent name
-    const { data: agent, error: agentError } = await supabaseClient
+    const { data: agent, error: agentError } = await getSupabaseClient()
       .from('agents')
       .select('name')
-      .eq('id', lead.agent_id)
+      .eq('agent_id', lead.agent_id)
       .single();
       
     // Combine lead and agent data
@@ -76,10 +76,10 @@ const update = async (id, updates) => {
     }
 
     // Update the lead in Supabase
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('leads')
       .update(filteredUpdates)
-      .eq('id', id)
+      .eq('lead_id', id)
       .select()
       .single();
       
@@ -94,7 +94,7 @@ const update = async (id, updates) => {
 const getByAgentId = async (agentId, status = null, limit = 50, offset = 0) => {
   try {
     // Build query
-    let query = supabaseClient
+    let query = getSupabaseClient()
       .from('leads')
       .select('*, agents!inner(name)')
       .eq('agent_id', agentId);
@@ -116,7 +116,7 @@ const getByAgentId = async (agentId, status = null, limit = 50, offset = 0) => {
     
     // Get chat counts for each lead
     const leadsWithChatCounts = await Promise.all(data.map(async (lead) => {
-      const { count, error: countError } = await supabaseClient
+      const { count, error: countError } = await getSupabaseClient()
 				.from("chats")
 				.select("*", { count: "exact", head: true })
 				.eq("lead_id", lead.id);
@@ -138,7 +138,7 @@ const getByAgentId = async (agentId, status = null, limit = 50, offset = 0) => {
 const getAll = async (status = null, limit = 50, offset = 0) => {
   try {
     // Build query
-    let query = supabaseClient
+    let query = getSupabaseClient()
       .from('leads')
       .select('*, agents!inner(name)');
     
@@ -159,7 +159,7 @@ const getAll = async (status = null, limit = 50, offset = 0) => {
     
     // Get chat counts for each lead
     const leadsWithChatCounts = await Promise.all(data.map(async (lead) => {
-      const { count, error: countError } = await supabaseClient
+      const { count, error: countError } = await getSupabaseClient()
 				.from("chats")
 				.select("*", { count: "exact", head: true })
 				.eq("lead_id", lead.id);
@@ -181,7 +181,7 @@ const getAll = async (status = null, limit = 50, offset = 0) => {
 const getStatsByAgentId = async (agentId) => {
   try {
     // Get total leads count
-    const { count: totalLeads, error: totalError } = await supabaseClient
+    const { count: totalLeads, error: totalError } = await getSupabaseClient()
       .from('leads')
       .select('*', { count: 'exact', head: true })
       .eq('agent_id', agentId);
@@ -189,21 +189,21 @@ const getStatsByAgentId = async (agentId) => {
     if (totalError) throw totalError;
     
     // Get new leads count
-    const { count: newLeads, error: newError } = await supabaseClient
+    const { count: newLeads, error: newError } = await getSupabaseClient()
       .from('leads')
       .select('*', { count: 'exact', head: true })
       .eq('agent_id', agentId)
       .eq('status', 'New');
       
     // Get contacted leads count
-    const { count: contactedLeads, error: contactedError } = await supabaseClient
+    const { count: contactedLeads, error: contactedError } = await getSupabaseClient()
       .from('leads')
       .select('*', { count: 'exact', head: true })
       .eq('agent_id', agentId)
       .eq('status', 'Contacted');
       
     // Get follow-up leads count
-    const { count: followupLeads, error: followupError } = await supabaseClient
+    const { count: followupLeads, error: followupError } = await getSupabaseClient()
       .from('leads')
       .select('*', { count: 'exact', head: true })
       .eq('agent_id', agentId)
@@ -211,7 +211,7 @@ const getStatsByAgentId = async (agentId) => {
       
     // Get upcoming follow-ups
     const today = new Date().toISOString().split('T')[0];
-    const { count: upcomingFollowups, error: upcomingError } = await supabaseClient
+    const { count: upcomingFollowups, error: upcomingError } = await getSupabaseClient()
       .from('leads')
       .select('*', { count: 'exact', head: true })
       .eq('agent_id', agentId)
@@ -243,7 +243,7 @@ const getUpcomingFollowUps = async (agentId = null, days = 7) => {
     const futureDateStr = futureDate.toISOString().split('T')[0];
     
     // Build query
-    let query = supabaseClient
+    let query = getSupabaseClient()
       .from('leads')
       .select('*, agents!inner(name)')
       .not('follow_up', 'is', null)
@@ -278,10 +278,10 @@ const getUpcomingFollowUps = async (agentId = null, days = 7) => {
 // Delete lead
 const deleteLead = async (id) => {
   try {
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('leads')
       .delete()
-      .eq('id', id)
+      .eq('lead_id', id)
       .select()
       .single();
       
@@ -295,7 +295,7 @@ const deleteLead = async (id) => {
 // Find lead by email and agent
 const findByEmailAndAgent = async (email, agentId) => {
   try {
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('leads')
       .select('*')
       .eq('email', email)

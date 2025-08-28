@@ -1,4 +1,4 @@
-const { supabaseClient, getSupabaseClient } = require('../config/supabase');
+const { getSupabaseClient } = require('../config/supabase');
 const { v4: uuidv4 } = require('uuid');
 
 // Create a new lead
@@ -25,13 +25,13 @@ const create = async (agent_id, name = null, mobile = null, email = null) => {
 // Get lead by ID
 const getById = async (id) => {
   try {
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('leads')
       .select(`
         *,
         agents!leads_agent_id_fkey (name)
       `)
-      .eq('id', id)
+      .eq('lead_id', id)
       .single();
     
     if (error) throw error;
@@ -66,10 +66,10 @@ const update = async (id, updates) => {
     // Add updated_at timestamp
     filteredUpdates.updated_at = new Date().toISOString();
     
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('leads')
       .update(filteredUpdates)
-      .eq('id', id)
+      .eq('lead_id', id)
       .select()
       .single();
     
@@ -83,7 +83,7 @@ const update = async (id, updates) => {
 // Get all leads for an agent
 const getAllByAgent = async (agentId) => {
   try {
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('leads')
       .select('*')
       .eq('agent_id', agentId)
@@ -99,7 +99,7 @@ const getAllByAgent = async (agentId) => {
 // Get leads by status
 const getByStatus = async (agentId, status) => {
   try {
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('leads')
       .select('*')
       .eq('agent_id', agentId)
@@ -118,7 +118,7 @@ const getFollowUps = async (agentId) => {
   try {
     const today = new Date().toISOString().split('T')[0];
     
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('leads')
       .select('*')
       .eq('agent_id', agentId)
@@ -137,10 +137,10 @@ const getFollowUps = async (agentId) => {
 // Delete a lead
 const deleteLead = async (id) => {
   try {
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('leads')
       .delete()
-      .eq('id', id)
+      .eq('lead_id', id)
       .select()
       .single();
     
@@ -154,7 +154,7 @@ const deleteLead = async (id) => {
 // Search leads
 const search = async (agentId, query) => {
   try {
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('leads')
       .select('*')
       .eq('agent_id', agentId)
@@ -172,7 +172,7 @@ const search = async (agentId, query) => {
 const getStats = async (agentId) => {
   try {
     // Get total count
-    const { count: totalCount, error: countError } = await supabaseClient
+    const { count: totalCount, error: countError } = await getSupabaseClient()
       .from('leads')
       .select('*', { count: 'exact', head: true })
       .eq('agent_id', agentId);
@@ -184,7 +184,7 @@ const getStats = async (agentId) => {
     const statusCounts = {};
     
     for (const status of statuses) {
-      const { count, error } = await supabaseClient
+      const { count, error } = await getSupabaseClient()
         .from('leads')
         .select('*', { count: 'exact', head: true })
         .eq('agent_id', agentId)

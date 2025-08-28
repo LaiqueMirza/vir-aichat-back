@@ -1,4 +1,4 @@
-const { supabaseClient } = require('../config/supabase');
+const { getSupabaseClient } = require('../config/supabase');
 
 async function addLeadIdToChats() {
   try {
@@ -15,7 +15,7 @@ async function addLeadIdToChats() {
     console.log('   - Create an index on this column');
     
     // Check if the column exists by trying to select it
-    const { error } = await supabaseClient
+    const { error } = await getSupabaseClient()
       .from('chats')
       .select('lead_id')
       .limit(1);

@@ -17,4 +17,7 @@ router.delete('/:agentId/chat', chatController.clearChatHistory);
 // Get recent chats for a user
 router.get('/user/:userId/recent', chatController.getRecentChats);
 
+// Get all recent chats for admin dashboard
+router.get('/admin/recent', chatController.getAllRecentChats);
+
 module.exports = router;

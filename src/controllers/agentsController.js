@@ -1,4 +1,4 @@
-const { supabaseClient } = require('../config/supabase');
+const { getSupabaseClient } = require('../config/supabase');
 const AgentSupabase = require('../models/AgentSupabase');
 const FileSupabase = require('../models/FileSupabase');
 const FileParser = require('../utils/fileParser');
@@ -11,18 +11,25 @@ const getAllAgents = async (req, res) => {
     try {
       let agents = await AgentSupabase.getAllByUser();
 
-      // Get analytics for each agent
-      const agentsWithAnalytics = await Promise.all(
+      // Get analytics and file names for each agent
+      const agentsWithAnalyticsAndFiles = await Promise.all(
         agents.map(async (agent) => {
           try {
+            // Get analytics
             const analytics = await AgentSupabase.getStats(agent.agent_id);
+            
+            // Get files for this agent
+            const files = await FileSupabase.getAllByAgent(agent.agent_id);
+            // const fileNames = files.map(file => { return { fileName: file.file_name, fileId: file.file_id } });
+            
             return {
               ...agent,
-              analytics
+              analytics,
+              files
             };
           } catch (error) {
-            console.error(`❌ Error fetching analytics for agent ${agent.id}:`, error.message);
-            // Return agent with default analytics if there's an error
+            console.error(`❌ Error fetching data for agent ${agent.agent_id}:`, error.message);
+            // Return agent with default analytics and empty file names if there's an error
             return {
               ...agent,
               analytics: {
@@ -31,7 +38,8 @@ const getAllAgents = async (req, res) => {
                 totalFiles: 0,
                 totalTokens: 0,
                 totalCost: '0.0000'
-              }
+              },
+              files: []
             };
           }
         })
@@ -39,7 +47,7 @@ const getAllAgents = async (req, res) => {
 
       res.json({
         success: true,
-        data: agentsWithAnalytics
+        data: agentsWithAnalyticsAndFiles
       });
     } catch (error) {
       console.error('❌ Error fetching agents:', error.message);
@@ -180,8 +188,8 @@ const createAgent = async (req, res) => {
 // Update agent
 const updateAgent = async (req, res) => {
     try {
-      const { id } = req.params;
-      const { name, description, system_prompt, welcome_message, avatar_url } = req.body;
+      const { agent_id } = req.params;
+      const { name, description } = req.body;
       
       if (!name) {
         return res.status(400).json({ 
@@ -191,21 +199,86 @@ const updateAgent = async (req, res) => {
       }
       
       // Check if agent exists
-      const existingAgent = await AgentSupabase.getById(id);
+      const existingAgent = await AgentSupabase.getById(agent_id);
       if (!existingAgent) {
         return res.status(404).json({ 
           error: 'Agent not found',
-          message: `Agent with ID ${id} does not exist` 
+          message: `Agent with ID ${agent_id} does not exist` 
         });
       }
       
-      const updatedAgent = await AgentSupabase.update(id, {
+      // Update agent basic information
+      const updatedAgent = await AgentSupabase.update(agent_id, {
         name,
-        description,
-        system_prompt,
-        welcome_message,
-        avatar_url
+        description
       });
+      
+      // Process uploaded file if it exists (using same logic as createAgent)
+      let fileResults = [];
+      if (req.files && req.files.length > 0) {
+        console.log(`Processing ${req.files.length} files for agent ${agent_id}`);
+        
+        const filePromises = req.files.map(async (file) => {
+          const fileBuffer = await fs.readFile(file.path);
+          return {
+            agentId: agent_id,
+            fileName: file.originalname,
+            fileType: path.extname(file.originalname).toLowerCase().slice(1),
+            fileSize: file.size,
+            fileBuffer,
+            contentType: file.mimetype
+          };
+        });
+
+        const fileData = await Promise.all(filePromises);
+        fileResults = await FileSupabase.createBatch(fileData);
+        
+        // Extract text content from the files and process embeddings
+        const extractedContents = [];
+        for (let i = 0; i < req.files.length; i++) {
+          const file = req.files[i];
+          const fileResult = fileResults[i];
+          
+          try {
+            console.log(`📄 Extracting text from: ${file.originalname}`);
+            
+            // Extract text content using FileParser
+            const fileType = path.extname(file.originalname).toLowerCase().slice(1);
+            const extractedData = await FileParser.parseFile(file.path, fileType);
+            
+            // Clean and normalize the extracted text
+            const cleanedContent = FileParser.cleanText(extractedData.content);
+            
+            if (cleanedContent && cleanedContent.trim().length > 0) {
+              extractedContents.push({
+                fileId: fileResult.id,
+                fileName: file.originalname,
+                content: cleanedContent,
+                metadata: extractedData.metadata
+              });
+              
+              // Process embeddings for the extracted content
+              console.log(`🔄 Processing embeddings for: ${file.originalname}`);
+              const embeddingResult = await embeddingsService.processDocument(
+                 agent_id,
+                 fileResult.file_id,
+                 cleanedContent,
+                 file.originalname
+              );
+              
+              console.log(`✅ Embeddings processed: ${embeddingResult} `);
+            } else {
+              console.warn(`⚠️ No text content extracted from: ${file.originalname}`);
+            }
+          } catch (extractionError) {
+            console.error(`❌ Error extracting text from ${file.originalname}:`, extractionError.message);
+            // Continue processing other files even if one fails
+          }
+        }
+
+        // Clean up uploaded files
+        await Promise.all(req.files.map(file => fs.unlink(file.path)));
+      }
       
       console.log(`✅ Updated agent: ${name}`);
       res.json({

@@ -1,7 +1,8 @@
-const { supabaseClient } = require('./src/config/supabase');
+const { getSupabaseClient } = require('./src/config/supabase');
 
 async function fixDatabaseSchema() {
   try {
+    const supabaseClient = getSupabaseClient();
     if (!supabaseClient) {
       console.error('❌ Supabase not configured');
       return;

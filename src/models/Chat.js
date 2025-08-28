@@ -1,4 +1,4 @@
-const { supabaseClient, getSupabaseClient } = require('../config/supabase');
+const { getSupabaseClient } = require('../config/supabase');
 const { v4: uuidv4 } = require('uuid');
 
 // Create a new chat session
@@ -28,20 +28,20 @@ const create = async (agent_id, lead_id = null) => {
 const getById = async (id) => {
   try {
 		// Get chat data
-		const { data: chat, error: chatError } = await supabaseClient
+		const { data: chat, error: chatError } = await getSupabaseClient()
 			.from("chats")
 			.select("*")
-			.eq("id", id)
+			.eq("chat_id", id)
 			.single();
 
 		if (chatError) throw chatError;
 
 		// If chat has a lead_id, get client data
 		if (chat.lead_id) {
-			const { data: client, error: clientError } = await supabaseClient
+			const { data: client, error: clientError } = await getSupabaseClient()
 				.from("leads")
 				.select("name, email, phone")
-				.eq("id", chat.lead_id)
+				.eq("lead_id", chat.lead_id)
 				.single();
 
 			if (!clientError && client) {
@@ -65,7 +65,7 @@ const getById = async (id) => {
 const addMessage = async (chatId, message, tokenCount = 0, cost = 0) => {
   try {
     // Get current chat
-    const { data: currentChat, error: getCurrentError } = await supabaseClient
+    const { data: currentChat, error: getCurrentError } = await getSupabaseClient()
       .from('chats')
       .select('messages, total_tokens, total_cost')
       .eq('id', chatId)
@@ -92,7 +92,7 @@ const addMessage = async (chatId, message, tokenCount = 0, cost = 0) => {
       const updatedCost = currentCost + cost;
 
       // Update chat
-      const { data, error } = await supabaseClient
+      const { data, error } = await getSupabaseClient()
         .from('chats')
         .update({ 
           messages: updatedMessages, 
@@ -114,7 +114,7 @@ const addMessage = async (chatId, message, tokenCount = 0, cost = 0) => {
 // Link chat to a lead
 const linkToLead = async (chatId, leadId) => {
   try {
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
 			.from("chats")
 			.update({ lead_id: leadId })
 			.eq("id", chatId)
@@ -132,7 +132,7 @@ const linkToLead = async (chatId, leadId) => {
 const getByAgentId = async (agentId, limit = 50, offset = 0) => {
   try {
 		// Get chats for the agent
-		const { data: chats, error: chatsError } = await supabaseClient
+		const { data: chats, error: chatsError } = await getSupabaseClient()
 			.from("chats")
 			.select("*")
 			.eq("agent_id", agentId)
@@ -145,7 +145,7 @@ const getByAgentId = async (agentId, limit = 50, offset = 0) => {
 		const chatsWithClientInfo = await Promise.all(
 			chats.map(async (chat) => {
 				if (chat.lead_id) {
-					const { data: client, error: clientError } = await supabaseClient
+					const { data: client, error: clientError } = await getSupabaseClient()
 						.from("leads")
 						.select("name, email, phone")
 						.eq("id", chat.lead_id)
@@ -173,7 +173,7 @@ const getByAgentId = async (agentId, limit = 50, offset = 0) => {
 // Get chat statistics for an agent
 const getStatsByAgentId = async (agentId, startDate = null, endDate = null) => {
   try {
-    let query = supabaseClient
+    let query = getSupabaseClient()
       .from('chats')
       .select('*')
       .eq('agent_id', agentId);
@@ -211,10 +211,10 @@ const getStatsByAgentId = async (agentId, startDate = null, endDate = null) => {
 // Delete chat
 const deleteChat = async (id) => {
   try {
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('chats')
       .delete()
-      .eq('id', id)
+      .eq('chat_id', id)
       .select()
       .single();
       
@@ -229,7 +229,7 @@ const deleteChat = async (id) => {
 const getRecent = async (limit = 10) => {
   try {
     // Get recent chats
-    const { data: chats, error: chatsError } = await supabaseClient
+    const { data: chats, error: chatsError } = await getSupabaseClient()
       .from('chats')
       .select('*')
       .order('created_at', { ascending: false })
@@ -240,32 +240,61 @@ const getRecent = async (limit = 10) => {
     // Fetch agent and client information for each chat
     const chatsWithDetails = await Promise.all(chats.map(async (chat) => {
       // Get agent info
-      const { data: agent, error: agentError } = await supabaseClient
-        .from('agents')
-        .select('name')
-        .eq('id', chat.agent_id)
-        .single();
+      let agentName = null;
+      try {
+        console.log(`🔍 Looking up agent with ID: ${chat.agent_id}`);
+        const { data: agent, error: agentError } = await getSupabaseClient()
+          .from('agents')
+          .select('name')
+          .eq('agent_id', chat.agent_id)
+          .single();
+        
+        console.log(`📊 Agent query result:`, { agent, agentError });
+        
+        if (agentError) {
+          console.error('❌ Error fetching agent:', agentError);
+        } else if (agent) {
+          agentName = agent.name;
+          console.log(`✅ Found agent name: ${agentName}`);
+        } else {
+          console.log('⚠️ No agent found but no error');
+        }
+      } catch (error) {
+        console.error('💥 Exception fetching agent:', error);
+      }
       
       // Get client info if available
       let clientName = null;
       let clientEmail = null;
       
       if (chat.lead_id) {
-				const { data: client, error: clientError } = await supabaseClient
-					.from("leads")
-					.select("name, email")
-					.eq("id", chat.lead_id)
-					.single();
+        try {
+          console.log(`🔍 Looking up lead with ID: ${chat.lead_id}`);
+          const { data: client, error: clientError } = await getSupabaseClient()
+            .from("leads")
+            .select("name, email")
+            .eq("lead_id", chat.lead_id)
+            .single();
 
-				if (!clientError && client) {
-					clientName = client.name;
-					clientEmail = client.email;
-				}
-			}
+          console.log(`📊 Lead query result:`, { client, clientError });
+
+          if (clientError) {
+            console.error('❌ Error fetching client:', clientError);
+          } else if (client) {
+            clientName = client.name;
+            clientEmail = client.email;
+            console.log(`✅ Found client: ${clientName} (${clientEmail})`);
+          } else {
+            console.log('⚠️ No client found but no error');
+          }
+        } catch (error) {
+          console.error('💥 Exception fetching client:', error);
+        }
+      }
       
       return {
         ...chat,
-        agent_name: agent?.name || null,
+        agent_name: agentName,
         client_name: clientName,
         client_email: clientEmail
       };

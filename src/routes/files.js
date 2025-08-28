@@ -9,7 +9,7 @@ router.get('/:agentId', filesController.getAgentFiles);
 router.post('/:agentId/upload', filesController.getUploadMiddleware(), filesController.uploadFile);
 
 // DELETE /api/files/:id - Delete file
-router.delete('/:id', filesController.deleteFile);
+router.delete('/:fileId', filesController.deleteFile);
 
 // POST /api/files/:id/reprocess - Reprocess file embeddings
 router.post('/:id/reprocess', filesController.reprocessFile);

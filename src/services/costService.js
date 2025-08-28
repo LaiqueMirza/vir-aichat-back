@@ -1,4 +1,4 @@
-const { supabaseClient } = require('../config/supabase');
+const { getSupabaseClient } = require('../config/supabase');
 
 // Calculate and store cost for a chat session
 const calculateSessionCost = async (chatId, tokenUsage, modelUsed) => {
@@ -53,7 +53,7 @@ const getAgentCostSummary = async (
 	endDate = null
 ) => {
 	try {
-		let query = supabaseClient
+		let query = getSupabaseClient()
 			.from("chats")
 			.select(
 				`
@@ -137,7 +137,7 @@ const getAgentCostSummary = async (
 const getAllAgentsCostSummary = async (startDate = null, endDate = null) => {
 	try {
 		// First get all agents
-		const { data: agents, error: agentsError } = await supabaseClient
+		const { data: agents, error: agentsError } = await getSupabaseClient()
 			.from("agents")
 			.select("id, name");
 
@@ -146,7 +146,7 @@ const getAllAgentsCostSummary = async (startDate = null, endDate = null) => {
 		// For each agent, get their chats
 		const agentSummaries = await Promise.all(
 			agents.map(async (agent) => {
-				let query = supabaseClient
+				let query = getSupabaseClient()
 					.from("chats")
 					.select("id, total_tokens, cost_usd")
 					.eq("agent_id", agent.id);
@@ -201,7 +201,7 @@ const getMonthlyCostTrends = async (agentId = null, months = 12) => {
 		monthsAgo.setMonth(monthsAgo.getMonth() - months);
 
 		// Query chats created after that date
-		let query = supabaseClient
+		let query = getSupabaseClient()
 			.from("chats")
 			.select("created_at, total_tokens, cost_usd")
 			.gte("created_at", monthsAgo.toISOString());

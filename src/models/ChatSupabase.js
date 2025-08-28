@@ -59,7 +59,7 @@ const addMessage = async (chatId, message, tokenCount = 0, cost = 0) => {
     const { data: currentChat, error: fetchError } = await getSupabaseClient()
       .from('chats')
       .select('messages, total_tokens, total_cost')
-      .eq('id', chatId)
+      .eq('chat_id', chatId)
       .single();
     
     if (fetchError) throw fetchError;
@@ -87,7 +87,7 @@ const addMessage = async (chatId, message, tokenCount = 0, cost = 0) => {
         total_tokens: updatedTokenCount,
         total_cost: updatedCost
       })
-      .eq('id', chatId)
+      .eq('chat_id', chatId)
       .select()
       .single();
     
@@ -104,7 +104,7 @@ const linkToLead = async (chatId, leadId) => {
     const { data, error } = await getSupabaseClient()
       .from('chats')
       .update({ lead_id: leadId })
-      .eq('id', chatId)
+      .eq('chat_id', chatId)
       .select()
       .single();
     
@@ -180,7 +180,7 @@ const getConversationSummary = async (chatId) => {
     const { data, error } = await getSupabaseClient()
       .from('chats')
       .select('messages')
-      .eq('id', chatId)
+      .eq('chat_id', chatId)
       .single();
     
     if (error) throw error;

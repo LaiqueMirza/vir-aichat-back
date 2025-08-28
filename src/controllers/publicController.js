@@ -1,4 +1,4 @@
-const { supabaseClient } = require('../config/supabase');
+const { getSupabaseClient } = require('../config/supabase');
 const ragService = require('../services/ragService');
 const embeddingsService = require('../services/embeddingsService');
 
@@ -9,7 +9,7 @@ const healthCheck = async (req, res) => {
         status: 'healthy',
         timestamp: new Date().toISOString(),
         services: {
-          database: supabaseClient ? 'connected' : 'disabled',
+          database: getSupabaseClient() ? 'connected' : 'disabled',
           ai: 'checking...',
           vectorDb: 'checking...'
         }
@@ -50,7 +50,7 @@ const getSystemInfo = async (req, res) => {
         version: process.env.npm_package_version || '1.0.0',
         environment: process.env.NODE_ENV || 'development',
         features: {
-          database: !!supabaseClient,
+          database: !!getSupabaseClient(),
           ai: false,
           vectorSearch: false,
           fileUpload: true
@@ -147,7 +147,7 @@ const getPublicAgentInfo = async (req, res) => {
     try {
       const { agentId } = req.params;
       
-      if (!supabaseClient) {
+      if (!getSupabaseClient()) {
         return res.json({
           success: true,
           data: {
@@ -160,10 +160,10 @@ const getPublicAgentInfo = async (req, res) => {
         });
       }
       
-      const { data: result, error } = await supabaseClient
+      const { data: result, error } = await getSupabaseClient()
         .from('agents')
-        .select('id, name, context, created_at')
-        .eq('id', agentId)
+        .select('agent_id, name, context, created_at')
+        .eq('agent_id', agentId)
         .single();
       
       if (error || !result) {
@@ -176,7 +176,7 @@ const getPublicAgentInfo = async (req, res) => {
       const agent = result;
       
       // Get basic statistics
-      const { data: chats, error: statsError } = await supabaseClient
+      const { data: chats, error: statsError } = await getSupabaseClient()
 				.from("chats")
 				.select("lead_id")
 				.eq("agent_id", agentId);

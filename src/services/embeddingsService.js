@@ -1,5 +1,5 @@
 const { embeddings, calculateEmbeddingCost } = require('../config/openai');
-const { storeEmbedding, searchSimilarEmbeddings, deleteAgentEmbeddings: deleteAgentEmbeddingsFromDb } = require('../config/vectorDb');
+const { storeEmbedding, searchSimilarEmbeddings, deleteAgentEmbeddings: deleteAgentEmbeddingsFromDb, deleteFileEmbeddings: deleteFileEmbeddingsFromDb } = require('../config/vectorDb');
 const { chunkDocument, optimizeChunks } = require('../utils/chunker');
 const tokenCounter = require('../utils/tokenCounter');
 
@@ -142,6 +142,18 @@ const deleteAgentEmbeddings = async (agentId) => {
     }
   }
 
+// Delete embeddings for a specific file
+const deleteFileEmbeddings = async (fileId) => {
+    try {
+      console.log(`🗑️ Deleting embeddings for file: ${fileId}`);
+      await deleteFileEmbeddingsFromDb(fileId);
+      console.log(`✅ Deleted embeddings for file: ${fileId}`);
+    } catch (error) {
+      console.error('❌ Error deleting file embeddings:', error.message);
+      throw error;
+    }
+  }
+
 // Reprocess documents for an agent
 const reprocessAgentDocuments = async (agentId, documents) => {
     try {
@@ -206,6 +218,7 @@ module.exports = {
   processBatch,
   searchRelevantContent,
   deleteAgentEmbeddings,
+  deleteFileEmbeddings,
   reprocessAgentDocuments,
   getEmbeddingStats
 };

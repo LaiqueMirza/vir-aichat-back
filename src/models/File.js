@@ -1,11 +1,11 @@
-const { supabaseClient } = require('../config/supabase');
+const { getSupabaseClient } = require('../config/supabase');
 const { v4: uuidv4 } = require('uuid');
 
 // Create a new file record
 const create = async (agentId, fileName, fileUrl) => {
   try {
     const id = uuidv4();
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('files')
       .insert([{ id, agent_id: agentId, file_name: fileName, file_url: fileUrl }])
       .select()
@@ -21,7 +21,7 @@ const create = async (agentId, fileName, fileUrl) => {
 // Get all files for an agent
 const getByAgentId = async (agentId) => {
   try {
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('files')
       .select('*')
       .eq('agent_id', agentId)
@@ -37,10 +37,10 @@ const getByAgentId = async (agentId) => {
 // Get file by ID
 const getById = async (id) => {
   try {
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('files')
       .select('*')
-      .eq('id', id)
+      .eq('file_id', id)
       .single();
       
     if (error) throw error;
@@ -53,10 +53,10 @@ const getById = async (id) => {
 // Delete file
 const deleteFile = async (id) => {
   try {
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('files')
       .delete()
-      .eq('id', id)
+      .eq('file_id', id)
       .select()
       .single();
       
@@ -70,7 +70,7 @@ const deleteFile = async (id) => {
 // Delete all files for an agent
 const deleteByAgentId = async (agentId) => {
   try {
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('files')
       .delete()
       .eq('agent_id', agentId)
@@ -86,7 +86,7 @@ const deleteByAgentId = async (agentId) => {
 // Get file count for an agent
 const getCountByAgentId = async (agentId) => {
   try {
-    const { count, error } = await supabaseClient
+    const { count, error } = await getSupabaseClient()
       .from('files')
       .select('id', { count: 'exact', head: true })
       .eq('agent_id', agentId);

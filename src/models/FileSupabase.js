@@ -1,4 +1,4 @@
-const { supabaseClient, uploadToStorage, deleteFromStorage, getSupabaseStorage, getSupabaseClient } = require('../config/supabase');
+const { uploadToStorage, deleteFromStorage, getSupabaseStorage, getSupabaseClient } = require('../config/supabase');
 const { v4: uuidv4 } = require('uuid');
 
 // Bucket name for agent files
@@ -7,41 +7,33 @@ const AGENT_FILES_BUCKET = 'agent-files';
 // Ensure bucket exists and has correct permissions
 const initBucket = async () => {
   try {
-    // const { data: buckets, error: bucketsError } = await getSupabaseStorage().listBuckets();
-    // if (bucketsError) throw bucketsError;
+    // Check if bucket exists
+    const { data: buckets, error: bucketsError } = await getSupabaseStorage().listBuckets();
+    if (bucketsError) throw bucketsError;
 
-    // const bucketExists = buckets.some(bucket => bucket.name === AGENT_FILES_BUCKET);
-    // if (!bucketExists) {
-    //   const { error: createError } = await getSupabaseStorage().createBucket(AGENT_FILES_BUCKET, {
-    //     public: true,
-    //     fileSizeLimit: 10485760 // 10MB
-    //   });
-      // if (createError) throw createError;
-
-      // Set up RLS policies for the bucket
-      const { error: policyError } = await getSupabaseStorage().from(AGENT_FILES_BUCKET).createPolicy(
-        'Enable access to agent files',
-        {
-          definition: true,
-          check: true,
-          allowedOperations: ['SELECT', 'INSERT', 'UPDATE', 'DELETE']
-        }
-      );
-      if (policyError) throw policyError;
-    // }
+    const bucketExists = buckets.some(bucket => bucket.name === AGENT_FILES_BUCKET);
+    if (!bucketExists) {
+      const { error: createError } = await getSupabaseStorage().createBucket(AGENT_FILES_BUCKET, {
+        public: true,
+        fileSizeLimit: 10485760 // 10MB
+      });
+      if (createError) throw createError;
+      console.log(`✅ Created storage bucket: ${AGENT_FILES_BUCKET}`);
+    }
   } catch (error) {
     console.error('❌ Error initializing storage bucket:', error.message);
-    throw error;
+    // Don't throw error if bucket already exists
+    if (!error.message.includes('already exists')) {
+      throw error;
+    }
   }
 };
 
 // Create a new file record with Supabase Storage URL
 const create = async (agentId, fileName, fileType, fileSize, fileBuffer, contentType) => {
-  // Ensure bucket exists with correct permissions
-  // await initBucket();
   try {
-    const id = uuidv4();
-    const filePath = `${agentId}/${id}-${fileName}`;
+    const file_id = uuidv4();
+    const filePath = `${agentId}/${file_id}-${fileName}`;
     
     // Upload file to Supabase Storage
     const storageResult = await uploadToStorage(
@@ -90,12 +82,12 @@ const createBatch = async (files) => {
 }
 
 // Get file by ID
-const getById = async (id) => {
+const getById = async (file_id) => {
   try {
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('files')
       .select('*')
-      .eq('id', id)
+      .eq('file_id', file_id)
       .single();
     
     if (error) throw error;
@@ -106,7 +98,7 @@ const getById = async (id) => {
 }
 
 // Update file information
-const update = async (id, updates) => {
+const update = async (file_id, updates) => {
   try {
     const allowedFields = ['file_name', 'file_type', 'file_size', 'file_url', 'embedding_status', 'chunk_count'];
     const filteredUpdates = {};
@@ -121,10 +113,10 @@ const update = async (id, updates) => {
     // Add updated_at timestamp
     filteredUpdates.updated_at = new Date().toISOString();
     
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('files')
       .update(filteredUpdates)
-      .eq('id', id)
+      .eq('file_id', file_id)
       .select()
       .single();
     
@@ -138,7 +130,7 @@ const update = async (id, updates) => {
 // Get all files for an agent
 const getAllByAgent = async (agentId) => {
   try {
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('files')
       .select('*')
       .eq('agent_id', agentId)
@@ -152,15 +144,13 @@ const getAllByAgent = async (agentId) => {
 }
 
 // Delete a file
-const deleteFile = async (id) => {
-  // Ensure bucket exists with correct permissions
-  await initBucket();
+const deleteFile = async (file_id) => {
   try {
     // Get file info first
-    const { data: fileData, error: fileError } = await supabaseClient
+    const { data: fileData, error: fileError } = await getSupabaseClient()
       .from('files')
       .select('*')
-      .eq('id', id)
+      .eq('file_id', file_id)
       .single();
       
     if (fileError) throw fileError;
@@ -171,10 +161,10 @@ const deleteFile = async (id) => {
     }
     
     // Delete from database
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('files')
       .delete()
-      .eq('id', id)
+      .eq('file_id', file_id)
       .select()
       .single();
     
@@ -186,7 +176,7 @@ const deleteFile = async (id) => {
 }
 
 // Update embedding status
-const updateEmbeddingStatus = async (id, status, chunkCount = null) => {
+const updateEmbeddingStatus = async (file_id, status, chunkCount = null) => {
   try {
     const updates = {
       embedding_status: status,
@@ -197,10 +187,10 @@ const updateEmbeddingStatus = async (id, status, chunkCount = null) => {
       updates.chunk_count = chunkCount;
     }
     
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('files')
       .update(updates)
-      .eq('id', id)
+      .eq('file_id', file_id)
       .select()
       .single();
     
@@ -214,7 +204,7 @@ const updateEmbeddingStatus = async (id, status, chunkCount = null) => {
 // Get files with pending embeddings
 const getPendingEmbeddings = async () => {
   try {
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('files')
       .select('*')
       .eq('embedding_status', 'pending')
