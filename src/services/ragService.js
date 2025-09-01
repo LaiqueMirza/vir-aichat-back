@@ -62,6 +62,16 @@ const createRagPrompt = async (
 	question,
 	leadInfo
 ) => {
+	// Pre-build missing info array for better performance
+	const missingInfo = [];
+	if (!leadInfo?.name) missingInfo.push('- name');
+	if (!leadInfo?.mobile) missingInfo.push('- Mobile number');
+	if (!leadInfo?.email) missingInfo.push('- Email address');
+	
+	const leadInfoSection = missingInfo.length > 0 
+		? `\n\nAt the end of the response ask user question to naturally collect any one of the below user information make sure the question is in a separate line and is highlighted:\n${missingInfo.join('\n')}\n`
+		: '';
+
 	try {
 		// Build the prompt step by step for clarity
 		const prompt = `
@@ -91,10 +101,7 @@ ${question}
 
 💡 **Now, provide the best possible response following the above rules** 
 
-At the end of the response ask user question to naturally collect any one of the below user information make sure the question is in a separate line and is highlighted:  
-${leadInfo?.name ? "" : "- name  "}
-${leadInfo?.mobile ? "" : "- Mobile number  "}
-${leadInfo?.email ? "" : "- Email address  "}
+${leadInfoSection}
  
 `;
 
