@@ -39,11 +39,11 @@ const getById = async (chat_id) => {
     // Format the response to match the expected structure
     if (data) {
       return {
-        ...data,
-        client_name: data.leads?.name,
-        client_email: data.leads?.email,
-        client_phone: data.leads?.phone
-      };
+				...data,
+				client_name: data.leads?.name,
+				client_email: data.leads?.email,
+				client_mobile: data.leads?.mobile,
+			};
     }
     
     return null;
@@ -136,24 +136,26 @@ const getRecentChatHistory = async (clientId, limit = 50) => {
 const getRecentChats = async (agentId, limit = 10) => {
   try {
     const { data, error } = await getSupabaseClient()
-      .from('chats')
-      .select(`
+			.from("chats")
+			.select(
+				`
         *,
-        leads!chats_lead_id_fkey (name, email, phone)
-      `)
-      .eq('agent_id', agentId)
-      .order('created_at', { ascending: false })
-      .limit(limit);
+        leads!chats_lead_id_fkey (name, email, mobile)
+      `
+			)
+			.eq("agent_id", agentId)
+			.order("created_at", { ascending: false })
+			.limit(limit);
     
     if (error) throw error;
     
     // Format the response to match the expected structure
-    return data.map(chat => ({
-      ...chat,
-      client_name: chat.leads?.name,
-      client_email: chat.leads?.email,
-      client_phone: chat.leads?.phone
-    }));
+    return data.map((chat) => ({
+			...chat,
+			client_name: chat.leads?.name,
+			client_email: chat.leads?.email,
+			client_mobile: chat.leads?.mobile,
+		}));
   } catch (error) {
     throw error;
   }

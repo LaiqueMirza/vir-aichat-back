@@ -2,6 +2,8 @@ const { embeddings, calculateEmbeddingCost } = require('../config/openai');
 const { storeEmbedding, searchSimilarEmbeddings, deleteAgentEmbeddings: deleteAgentEmbeddingsFromDb, deleteFileEmbeddings: deleteFileEmbeddingsFromDb } = require('../config/vectorDb');
 const { chunkDocument, optimizeChunks } = require('../utils/chunker');
 const tokenCounter = require('../utils/tokenCounter');
+const LeadSupabase = require('../models/LeadSupabase');
+const { extractUserInfoWithAI, extractUserInfoRegex } = require('../utils/userInfoExtractor');
 
 // Process and store document embeddings
 const processDocument = async (agentId, fileId, content, metadata = {}) => {
@@ -102,14 +104,73 @@ const processBatch = async (fileId, chunks) => {
     return results;
   }
 
+
+
 // Search for relevant content using embeddings
-const searchRelevantContent = async (agentId, query, limit = 3, threshold = 0.3) => {
+const searchRelevantContent = async (agentId, query, leadId = null, limit = 3, threshold = 0.3) => {
     try {
+      let totalTokens = 0;
+      let totalCost = 0;
+      
+      // Extract user information using AI-based analysis with fallback to regex
+      let userInfo = await extractUserInfoWithAI(query);
+      
+      // Add AI extraction costs if userInfo contains cost data
+      if (userInfo && userInfo.tokenUsage) {
+        totalTokens += userInfo.tokenUsage.totalTokens || 0;
+        totalCost += userInfo.cost || 0;
+      }
+      
+      // Fallback to regex extraction if AI extraction fails
+      if (!userInfo) {
+        userInfo = extractUserInfoRegex(query);
+      }
+      
+      // If we have user info and a leadId, update the lead
+      if (leadId && (userInfo.name || userInfo.email || userInfo.mobile)) {
+        try {
+// Get the existing lead to check if it exists
+const existingLead = await LeadSupabase.getById(leadId);
+
+if (!existingLead) {
+  console.warn(`⚠️ Lead ${leadId} not found for update`);
+  return;
+}
+
+// Merge existing lead data with new user info
+const updatedLeadData = {
+  name: userInfo.name || existingLead.name,
+  email: userInfo.email || existingLead.email, 
+  mobile: userInfo.mobile || existingLead.mobile
+};
+					await LeadSupabase.update(leadId, updatedLeadData);
+					console.log(
+						`📝 Updated lead ${leadId} with extracted info:`,
+						userInfo
+					);
+				} catch (leadError) {
+					console.error(
+						"❌ Error updating lead with extracted info:",
+						leadError.message
+					);
+				}
+			}
       
       if (!embeddings) {
         console.warn('⚠️ Skipping content search - OpenAI not configured');
-        return [];
+        return {
+          results: [],
+          tokenUsage: { totalTokens },
+          cost: totalCost
+        };
       }
+      
+      // Calculate embedding tokens and cost
+      const embeddingTokens = tokenCounter.countEmbeddingTokens(query);
+      const embeddingCost = calculateEmbeddingCost(embeddingTokens);
+      
+      totalTokens += embeddingTokens;
+      totalCost += embeddingCost;
       
       // Generate query embedding
       const queryEmbedding = await embeddings.embedQuery(query);
@@ -118,12 +179,19 @@ const searchRelevantContent = async (agentId, query, limit = 3, threshold = 0.3)
       const results = await searchSimilarEmbeddings(agentId, queryEmbedding, limit, threshold);
       
       console.log(`📋 Found ${results.length} relevant chunks`);
+      console.log(`💰 Embedding tokens: ${embeddingTokens}, cost: $${embeddingCost.toFixed(6)}`);
       
-      return results.map(result => ({
+      const mappedResults = results.map(result => ({
         content: result.content,
         similarity: result.similarity,
         metadata: result.metadata
       }));
+      
+      return {
+        results: mappedResults,
+        tokenUsage: { totalTokens },
+        cost: totalCost, 
+      };
     } catch (error) {
       console.error('❌ Error searching relevant content:', error.message);
       throw error;

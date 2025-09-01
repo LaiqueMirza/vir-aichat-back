@@ -187,7 +187,7 @@ const getChats = async (agentId) => {
       const { data: lead, error: leadError } = await getSupabaseClient()
 				.from("leads")
 				.select("name, email")
-				.eq("id", chat.lead_id)
+				.eq("lead_id", chat.lead_id)
 				.single();
         
       if (leadError && leadError.code !== 'PGRST116') throw leadError; // PGRST116 is 'not found'

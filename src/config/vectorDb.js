@@ -14,7 +14,6 @@ if (process.env.SUPABASE_URL &&
       process.env.SUPABASE_URL,
       process.env.SUPABASE_SERVICE_ROLE_KEY
     );
-    console.log('✅ Supabase client initialized');
   } catch (error) {
     console.warn('⚠️ Failed to initialize Supabase client:', error.message);
   }
@@ -35,8 +34,6 @@ const initializeVectorTable = async () => {
     
     if (error && !error.message.includes('already exists')) {
       console.error('❌ Error creating embeddings table:', error.message);
-    } else {
-      console.log('✅ Vector embeddings table ready');
     }
   } catch (err) {
     console.error('❌ Vector database initialization error:', err.message);

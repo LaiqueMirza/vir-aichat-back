@@ -120,11 +120,11 @@ const extractLead = async (req, res) => {
       let leadRecord = null;
       // Create lead using LeadSupabase model
       leadRecord = await LeadSupabase.create(
-        agentId,
-        leadInfo.name || null,
-        leadInfo.phone || null,
-        leadInfo.email || null
-      );
+				agentId,
+				leadInfo.name || null,
+				leadInfo.mobile || null,
+				leadInfo.email || null
+			);
       
       console.log(`✅ Lead extracted and stored: ${leadInfo.name || 'Unknown'} (${leadInfo.email || 'No email'})`);
       
@@ -147,27 +147,15 @@ const extractLead = async (req, res) => {
 const createLead = async (req, res) => {
     try {
       const { agent_id } = req.params;
-      const { name, email, mobile } = req.body;
-      
-      if (!name && !email) {
-        return res.status(400).json({ 
-          error: 'Validation error',
-          message: 'Either name or email is required' 
-        });
-      }
       
       const agent = await AgentSupabase.getById(agent_id);
 
       // Create lead using LeadSupabase model
       const lead = await LeadSupabase.create(
         agent_id,
-        name,
-        mobile,
-        email
       );
       
       const chat = await ChatSupabase.create(agent_id, lead.lead_id);
-      console.log(`✅ Created lead manually: ${name || email}`);
       res.status(201).json({
         success: true,
         lead,
@@ -188,7 +176,7 @@ const createLead = async (req, res) => {
 const updateLead = async (req, res) => {
     try {
       const { agentId, leadId } = req.params;
-      const { name, email, phone, company, notes, status } = req.body;
+      const { name, email, mobile } = req.body;
       
       // Get the lead first to check if it exists and belongs to the agent
       const existingLead = await LeadSupabase.getById(leadId);
@@ -202,13 +190,10 @@ const updateLead = async (req, res) => {
       
       // Update lead using LeadSupabase model
       const updatedLead = await LeadSupabase.update(leadId, {
-        name: name || existingLead.name,
-        email: email || existingLead.email,
-        phone: phone || existingLead.phone,
-        company: company || existingLead.company,
-        notes: notes || existingLead.notes,
-        status: status || existingLead.status
-      });
+				name: name || existingLead.name,
+				email: email || existingLead.email,
+				mobile: mobile || existingLead.mobile,
+			});
       
       console.log(`✅ Updated lead: ${updatedLead.name || updatedLead.email}`);
       res.json({

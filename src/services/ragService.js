@@ -3,6 +3,7 @@ const embeddingsService = require('./embeddingsService');
 const tokenCounter = require('../utils/tokenCounter');
 const { PromptTemplate } = require('@langchain/core/prompts');
 const { RunnableSequence } = require('@langchain/core/runnables');
+const fs = require('fs');
 
 // System prompt template for the AI agent
 const systemPromptTemplate = PromptTemplate.fromTemplate(`
@@ -17,7 +18,7 @@ Instructions:
 3. Be professional, friendly, and helpful
 4. During the conversation, naturally collect the following lead information when appropriate:
    - Customer's name
-   - Phone number
+   - mobile number
    - Email address
    - Preferred follow-up date
 5. Don't be pushy about collecting information - let it flow naturally in the conversation
@@ -43,27 +44,28 @@ Conversation:
 
 Extract the following information if mentioned:
 - Name: (customer's full name)
-- Phone: (phone number in any format)
+- mobile: (mobile number in any format)
 - Email: (email address)
 - Follow-up Date: (any mentioned date for follow-up)
 
 Return the information in JSON format. If any field is not mentioned, use null.
-Example: {"name": "John Doe", "phone": "+1234567890", "email": "john@example.com", "followUp": "2024-01-15"}
+Example: {"name": "John Doe", "mobile": "+1234567890", "email": "john@example.com", "followUp": "2024-01-15"}
 
 Lead Information:
     `);
 // Create RAG prompt function
 const createRagPrompt = async (
-  agentName,
-  agentDescription,
-  context,
-  formattedChatHistory,
-  question
+	agentName,
+	agentDescription,
+	context,
+	formattedChatHistory,
+	question,
+	leadInfo
 ) => {
-  try {
-    // Build the prompt step by step for clarity
-    const prompt = `
-You are **${agentName}**, an AI assistant.  
+	try {
+		// Build the prompt step by step for clarity
+		const prompt = `
+You are an AI assistant whose name is **${agentName}**.  
 Your purpose is to provide **accurate, helpful, and professional responses** using the given context and chat history.  
 
 ### Agent Profile  
@@ -87,174 +89,205 @@ ${question}
 
 ---
 
-💡 **Now, provide the best possible response following the above rules.**  
-    `;
+💡 **Now, provide the best possible response following the above rules** 
 
-    return prompt.trim();
-  } catch (error) {
-    console.error("Error creating RAG prompt:", error);
-    throw new Error("Failed to create RAG prompt");
-  }
+At the end of the response ask user question to naturally collect any one of the below user information make sure the question is in a separate line and is highlighted:  
+${leadInfo?.name ? "" : "- name  "}
+${leadInfo?.mobile ? "" : "- Mobile number  "}
+${leadInfo?.email ? "" : "- Email address  "}
+ 
+`;
+
+		return prompt.trim();
+	} catch (error) {
+		console.error("Error creating RAG prompt:", error);
+		throw new Error("Failed to create RAG prompt");
+	}
 };
 
-
 // Generate AI response using RAG
-const generateResponse = async (agent, question, relevantContent, chatHistory = []) => {
-    try {
-      
-      // Check if OpenAI is configured
-      if (!gpt4o || !gpt4oMini) {
-        console.warn('⚠️ OpenAI not configured - returning fallback response');
-        return {
-          response: "I'm sorry, but I'm currently unable to process your request as the AI service is not configured. Please contact the administrator.",
-          tokenUsage: {
-            inputTokens: 0,
-            outputTokens: 0,
-            totalTokens: 0
-          },
-          cost: 0,
-          modelUsed: 'none',
-          relevantSources: 0,
-          contextUsed: false
-        };
-      }
-      
-      // Prepare context from relevant content
-      const context = relevantContent.length > 0 
-        ? relevantContent.map(item => item.content).join('\n\n')
-        : 'No specific context found in the knowledge base.';
-      
-      // Prepare chat history
-      const formattedChatHistory = chatHistory
-        .map(msg => `${msg.role}: ${msg.message}`)
-        .join('\n');
-      
-      // Create the prompt
-      const prompt = await createRagPrompt(
-        agent.name,
-        agent.description,
-        context,
-        formattedChatHistory,
-        question
-      );
-      
-      // Determine which model to use based on complexity
-      const model = shouldUseGPT4o(question, context) ? gpt4o : gpt4oMini;
-      const modelName = model === gpt4o ? 'gpt-4o' : 'gpt-4o-mini';
-      
-      console.log(`🧠 Using model: ${modelName}`);
-      
-      // Generate response
-      const response = await model.invoke(prompt);
-      console.log('Generated response:', response);
-      // Calculate token usage and cost
-      const tokenUsage = tokenCounter.calculateChatTokenUsage(
-        [{ role: 'system', content: prompt }],
-        response,
-        modelName
-      );
-      
-      const cost = calculateCost(
-        tokenUsage.inputTokens,
-        tokenUsage.outputTokens,
-        modelName
-      );
-      
-      console.log(`💰 Token usage - Input: ${tokenUsage.inputTokens}, Output: ${tokenUsage.outputTokens}, Cost: $${cost.toFixed(6)}`);
-      
-      return {
-        response,
-        tokenUsage,
-        cost,
-        modelUsed: modelName,
-        relevantSources: relevantContent.length,
-        contextUsed: context.length > 0
-      };
-    } catch (error) {
-      console.error('❌ Error generating RAG response:', error.message);
-      throw error;
-    }
+const generateResponse = async (
+	agent,
+	question,
+	relevantContent,
+	chatHistory = [],
+	leadInfo = {}
+) => {
+	try {
+		// Check if OpenAI is configured
+		if (!gpt4o || !gpt4oMini) {
+			console.warn("⚠️ OpenAI not configured - returning fallback response");
+			return {
+				response:
+					"I'm sorry, but I'm currently unable to process your request as the AI service is not configured. Please contact the administrator.",
+				tokenUsage: {
+					inputTokens: 0,
+					outputTokens: 0,
+					totalTokens: 0,
+				},
+				cost: 0,
+				modelUsed: "none",
+				relevantSources: 0,
+				contextUsed: false,
+			};
+		}
+
+		// Prepare context from relevant content
+		const context =
+			relevantContent.length > 0
+				? relevantContent.map((item) => item.content).join("\n\n")
+				: "No specific context found in the knowledge base.";
+
+		// Prepare chat history
+		const formattedChatHistory = chatHistory
+			.map((msg) => `${msg.role}: ${msg.message}`)
+			.join("\n");
+
+		// Create the prompt
+		const prompt = await createRagPrompt(
+			agent.name,
+			agent.description,
+			context,
+			formattedChatHistory,
+			question,
+			leadInfo
+		);
+// Write prompt to file
+try {
+    fs.writeFileSync('prompt.txt', prompt);
+    console.log('✅ Prompt written to prompt.txt successfully');
+} catch (error) {
+    console.error('❌ Error writing prompt to file:', error.message);
 }
+
+		// Determine which model to use based on complexity
+		const model = shouldUseGPT4o(question, context) ? gpt4o : gpt4oMini;
+		const modelName = model === gpt4o ? "gpt-4o" : "gpt-4o-mini";
+
+		console.log(`🧠 Using model: ${modelName}`);
+
+		// Generate response
+		const response = await model.invoke(prompt);
+		console.log("Generated response:", response);
+		// Calculate token usage and cost
+		const tokenUsage = tokenCounter.calculateChatTokenUsage(
+			[{ role: "system", content: prompt }],
+			response,
+			modelName
+		);
+
+		const cost = calculateCost(
+			tokenUsage.inputTokens,
+			tokenUsage.outputTokens,
+			modelName
+		);
+
+		console.log(
+			`💰 Token usage - Input: ${tokenUsage.inputTokens}, Output: ${
+				tokenUsage.outputTokens
+			}, Cost: $${cost.toFixed(6)}`
+		);
+
+		return {
+			response,
+			tokenUsage,
+			cost,
+			modelUsed: modelName,
+			relevantSources: relevantContent.length,
+			contextUsed: context.length > 0,
+		};
+	} catch (error) {
+		console.error("❌ Error generating RAG response:", error.message);
+		throw error;
+	}
+};
 
 // Extract lead information from conversation
 const extractLeadInfo = async (conversation) => {
-    try {
-      console.log('🔍 Extracting lead information from conversation');
-      
-      if (!gpt4oMini) {
-        console.warn('⚠️ OpenAI not configured - skipping lead extraction');
-        return null;
-      }
-      
-      const prompt = await this.leadExtractionPrompt.format({
-        conversation: conversation
-      });
-      
-      const response = await gpt4oMini.invoke([
-        { role: 'system', content: prompt }
-      ]);
-      
-      // Parse the JSON response
-      let leadData;
-      try {
-        leadData = JSON.parse(response.content);
-      } catch (parseError) {
-        console.warn('⚠️ Failed to parse lead extraction response as JSON');
-        return null;
-      }
-      
-      // Clean and validate the extracted data
-      const cleanedData = {
-        name: cleanName(leadData.name),
-        phone: cleanPhone(leadData.phone),
-        email: cleanEmail(leadData.email),
-        followUpDate: cleanDate(leadData.followUp)
-      };
-      
-      // Only return if we have at least name or contact info
-      if (cleanedData.name || cleanedData.phone || cleanedData.email) {
-        console.log('✅ Lead information extracted successfully');
-        return cleanedData;
-      }
-      
-      return null;
-    } catch (error) {
-      console.error('❌ Error extracting lead info:', error.message);
-      return null;
-    }
-}
+	try {
+		console.log("🔍 Extracting lead information from conversation");
+
+		if (!gpt4oMini) {
+			console.warn("⚠️ OpenAI not configured - skipping lead extraction");
+			return null;
+		}
+
+		const prompt = await this.leadExtractionPrompt.format({
+			conversation: conversation,
+		});
+
+		const response = await gpt4oMini.invoke([
+			{ role: "system", content: prompt },
+		]);
+
+		// Parse the JSON response
+		let leadData;
+		try {
+			leadData = JSON.parse(response.content);
+		} catch (parseError) {
+			console.warn("⚠️ Failed to parse lead extraction response as JSON");
+			return null;
+		}
+
+		// Clean and validate the extracted data
+		const cleanedData = {
+			name: cleanName(leadData.name),
+			mobile: cleanmobile(leadData.mobile),
+			email: cleanEmail(leadData.email),
+			followUpDate: cleanDate(leadData.followUp),
+		};
+
+		// Only return if we have at least name or contact info
+		if (cleanedData.name || cleanedData.mobile || cleanedData.email) {
+			console.log("✅ Lead information extracted successfully");
+			return cleanedData;
+		}
+
+		return null;
+	} catch (error) {
+		console.error("❌ Error extracting lead info:", error.message);
+		return null;
+	}
+};
 
 // Determine if we should use GPT-4o for complex queries
 const shouldUseGPT4o = (question, context) => {
-    const complexityIndicators = [
-      'analyze', 'compare', 'explain in detail', 'complex', 'technical',
-      'calculate', 'recommend', 'strategy', 'detailed analysis'
-    ];
-    
-    const questionLower = question.toLowerCase();
-    const hasComplexityIndicator = complexityIndicators.some(indicator => 
-      questionLower.includes(indicator)
-    );
-    
-    const isLongContext = context.length > 2000;
-    const isLongQuestion = question.length > 200;
-    
-    return hasComplexityIndicator || isLongContext || isLongQuestion;
-  }
+	const complexityIndicators = [
+		"analyze",
+		"compare",
+		"explain in detail",
+		"complex",
+		"technical",
+		"calculate",
+		"recommend",
+		"strategy",
+		"detailed analysis",
+	];
+
+	const questionLower = question.toLowerCase();
+	const hasComplexityIndicator = complexityIndicators.some((indicator) =>
+		questionLower.includes(indicator)
+	);
+
+	const isLongContext = context.length > 2000;
+	const isLongQuestion = question.length > 200;
+
+	return hasComplexityIndicator || isLongContext || isLongQuestion;
+};
 
 // Clean and validate name
 const cleanName = (name) => {
-    if (!name || typeof name !== 'string') return null;
-    const cleaned = name.trim().replace(/[^a-zA-Z\s'-]/g, '');
-    return cleaned.length >= 2 ? cleaned : null;
-}
+	if (!name || typeof name !== "string") return null;
+	const cleaned = name.trim().replace(/[^a-zA-Z\s'-]/g, "");
+	return cleaned.length >= 2 ? cleaned : null;
+};
 
-// Clean and validate phone number
-const cleanPhone = (phone) => {
-    if (!phone || typeof phone !== 'string') return null;
-    const cleaned = phone.replace(/[^\d+()-\s]/g, '').trim();
-    return cleaned.length >= 10 ? cleaned : null;
-}
+// Clean and validate mobile number
+const cleanmobile = (mobile) => {
+	if (!mobile || typeof mobile !== "string") return null;
+	const cleaned = mobile.replace(/[^\d+()-\s]/g, "").trim();
+	return cleaned.length >= 10 ? cleaned : null;
+};
 
 // Clean and validate email
 const cleanEmail = (email) => {
@@ -317,13 +350,13 @@ Summary:`;
 }
 
 module.exports = {
-  generateResponse,
-  extractLeadInfo,
-  shouldUseGPT4o,
-  cleanName,
-  cleanPhone,
-  cleanEmail,
-  cleanDate,
-  generateConversationSummary,
-  createRagPrompt
+	generateResponse,
+	extractLeadInfo,
+	shouldUseGPT4o,
+	cleanName,
+	cleanmobile,
+	cleanEmail,
+	cleanDate,
+	generateConversationSummary,
+	createRagPrompt,
 };

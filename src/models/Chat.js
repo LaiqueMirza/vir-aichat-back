@@ -26,7 +26,7 @@ const create = async (agent_id, lead_id = null) => {
 
 // Get chat by ID
 const getById = async (id) => {
-  try {
+	try {
 		// Get chat data
 		const { data: chat, error: chatError } = await getSupabaseClient()
 			.from("chats")
@@ -40,7 +40,7 @@ const getById = async (id) => {
 		if (chat.lead_id) {
 			const { data: client, error: clientError } = await getSupabaseClient()
 				.from("leads")
-				.select("name, email, phone")
+				.select("name, email, mobile")
 				.eq("lead_id", chat.lead_id)
 				.single();
 
@@ -50,87 +50,86 @@ const getById = async (id) => {
 					...chat,
 					client_name: client.name,
 					client_email: client.email,
-					client_phone: client.phone,
+					client_mobile: client.mobile,
 				};
 			}
 		}
 
 		return chat;
 	} catch (error) {
-    throw error;
-  }
-}
+		throw error;
+	}
+};
 
 // Update chat with new message
 const addMessage = async (chatId, message, tokenCount = 0, cost = 0) => {
-  try {
-    // Get current chat
-    const { data: currentChat, error: getCurrentError } = await getSupabaseClient()
-      .from('chats')
-      .select('messages, total_tokens, total_cost')
-      .eq('id', chatId)
-      .single();
-      
-    if (getCurrentError) throw getCurrentError;
-    if (!currentChat) {
-        throw new Error('Chat not found');
-      }
+	try {
+		// Get current chat
+		const { data: currentChat, error: getCurrentError } =
+			await getSupabaseClient()
+				.from("chats")
+				.select("messages, total_tokens, total_cost")
+				.eq("id", chatId)
+				.single();
 
-      // Extract current values
-      const currentMessages = currentChat.messages || [];
-      const currentTokenCount = currentChat.total_tokens || 0;
-      const currentCost = parseFloat(currentChat.total_cost) || 0;
+		if (getCurrentError) throw getCurrentError;
+		if (!currentChat) {
+			throw new Error("Chat not found");
+		}
 
-      // Add new message with timestamp
-      const newMessage = {
-        ...message,
-        timestamp: new Date().toISOString()
-      };
-      
-      const updatedMessages = [...currentMessages, newMessage];
-      const updatedTokenCount = currentTokenCount + tokenCount;
-      const updatedCost = currentCost + cost;
+		// Extract current values
+		const currentMessages = currentChat.messages || [];
+		const currentTokenCount = currentChat.total_tokens || 0;
+		const currentCost = parseFloat(currentChat.total_cost) || 0;
 
-      // Update chat
-      const { data, error } = await getSupabaseClient()
-        .from('chats')
-        .update({ 
-          messages: updatedMessages, 
-          total_tokens: updatedTokenCount, 
-          total_cost: updatedCost 
-        })
-        .eq('id', chatId)
-        .select()
-        .single()
-;
-      
-      if (error) throw error;
-      return data;
-    } catch (error) {
-      throw error;
-    }
-  }
+		// Add new message with timestamp
+		const newMessage = {
+			...message,
+			timestamp: new Date().toISOString(),
+		};
 
-// Link chat to a lead
-const linkToLead = async (chatId, leadId) => {
-  try {
-    const { data, error } = await getSupabaseClient()
+		const updatedMessages = [...currentMessages, newMessage];
+		const updatedTokenCount = currentTokenCount + tokenCount;
+		const updatedCost = currentCost + cost;
+
+		// Update chat
+		const { data, error } = await getSupabaseClient()
 			.from("chats")
-			.update({ lead_id: leadId })
+			.update({
+				messages: updatedMessages,
+				total_tokens: updatedTokenCount,
+				total_cost: updatedCost,
+			})
 			.eq("id", chatId)
 			.select()
 			.single();
-      
-    if (error) throw error;
-    return data;
-  } catch (error) {
-    throw error;
-  }
-}
+		if (error) throw error;
+		return data;
+	} catch (error) {
+		throw error;
+	}
+};
+
+// Link chat to a lead
+const linkToLead = async (chatId, leadId) => {
+	try {
+		const { data, error } = await getSupabaseClient()
+			.from("chats")
+			.update({ lead_id: leadId })
+			.eq("chat_id", chatId)
+			.select()
+			.single();
+
+		if (error) throw error;
+		return data;
+	} catch (error) {
+		throw error;
+	}
+};
 
 // Get all chats for an agent
 const getByAgentId = async (agentId, limit = 50, offset = 0) => {
-  try {
+	try {
 		// Get chats for the agent
 		const { data: chats, error: chatsError } = await getSupabaseClient()
 			.from("chats")
@@ -147,8 +146,8 @@ const getByAgentId = async (agentId, limit = 50, offset = 0) => {
 				if (chat.lead_id) {
 					const { data: client, error: clientError } = await getSupabaseClient()
 						.from("leads")
-						.select("name, email, phone")
-						.eq("id", chat.lead_id)
+						.select("name, email, mobile")
+						.eq("lead_id", chat.lead_id)
 						.single();
 
 					if (!clientError && client) {
@@ -156,7 +155,7 @@ const getByAgentId = async (agentId, limit = 50, offset = 0) => {
 							...chat,
 							client_name: client.name,
 							client_email: client.email,
-							client_phone: client.phone,
+							client_mobile: client.mobile,
 						};
 					}
 				}
@@ -166,9 +165,9 @@ const getByAgentId = async (agentId, limit = 50, offset = 0) => {
 
 		return chatsWithClientInfo;
 	} catch (error) {
-    throw error;
-  }
-}
+		throw error;
+	}
+};
 
 // Get chat statistics for an agent
 const getStatsByAgentId = async (agentId, startDate = null, endDate = null) => {
@@ -214,7 +213,7 @@ const deleteChat = async (id) => {
     const { data, error } = await getSupabaseClient()
       .from('chats')
       .delete()
-      .eq('chat_id', id)
+      .eq('id', id)
       .select()
       .single();
       

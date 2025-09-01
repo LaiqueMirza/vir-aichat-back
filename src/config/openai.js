@@ -39,8 +39,6 @@ if (isOpenAIConfigured) {
       openAIApiKey: process.env.OPENAI_API_KEY,
       modelName: 'text-embedding-3-small',
     });
-    
-    console.log('✅ OpenAI models initialized');
   } catch (error) {
     console.error('❌ Failed to initialize OpenAI models:', error.message);
   }

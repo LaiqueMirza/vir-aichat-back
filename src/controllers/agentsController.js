@@ -162,7 +162,7 @@ const createAgent = async (req, res) => {
             }
           } catch (extractionError) {
             console.error(`❌ Error extracting text from ${file.originalname}:`, extractionError.message);
-            // Continue processing other files even if one fails
+            // go on processing other files even if one fails
           }
         }
 
@@ -272,7 +272,7 @@ const updateAgent = async (req, res) => {
             }
           } catch (extractionError) {
             console.error(`❌ Error extracting text from ${file.originalname}:`, extractionError.message);
-            // Continue processing other files even if one fails
+            // go on processing other files even if one fails
           }
         }
 

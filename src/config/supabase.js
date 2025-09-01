@@ -10,7 +10,6 @@ function initializeSupabase() {
   const supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   try {
-    console.log('🔄 Creating Supabase client...');
     const client = createClient(supabaseUrl, supabaseKey, {
       auth: {
         persistSession: false,
@@ -23,7 +22,6 @@ function initializeSupabase() {
       return null;
     }
     
-    console.log('✅ Supabase client initialized successfully');
     return client;
   } catch (error) {
     const errorMessage = error.message || (typeof error === 'object' ? JSON.stringify(error) : String(error));
@@ -52,7 +50,6 @@ const testConnection = async () => {
       return false;
     }
     
-    console.log('🔄 Attempting to connect to Supabase...');
     // Simple query to test connection
     const { data, error } = await client.from('agents').select('count', { count: 'exact', head: true });
     
@@ -60,12 +57,11 @@ const testConnection = async () => {
       console.error('❌ Supabase connection error:', error.message || JSON.stringify(error));
       throw new Error(`Supabase connection failed: ${error.message || JSON.stringify(error)}`);
     }
-    console.log('✅ Supabase connected successfully');
     return true;
   } catch (error) {
     const errorMessage = error.message || (typeof error === 'object' ? JSON.stringify(error) : String(error));
     console.error('❌ Supabase connection error:', errorMessage);
-    // Don't throw the error, just return false to allow the server to continue
+    // Don't throw the error, just return false to allow the server to go on 
     return false;
   }
 };
@@ -79,8 +75,6 @@ async function initializeTables() {
       return;
     }
     
-    console.log('🔧 Checking database tables in Supabase...');
-    
     // Define required tables
     const requiredTables = ['agents', 'files', 'leads', 'chats', 'chat_logs'];
     let missingTables = [];
@@ -88,7 +82,6 @@ async function initializeTables() {
     // Check each table
     for (const table of requiredTables) {
       try {
-        console.log(`🔄 Checking ${table} table...`);
         const { data, error } = await client
           .from(table)
           .select('count', { count: 'exact', head: true });
@@ -98,8 +91,6 @@ async function initializeTables() {
           missingTables.push(table);
         } else if (error) {
           console.error(`❌ Error checking ${table} table:`, error.message || JSON.stringify(error));
-        } else {
-          console.log(`✅ Table ${table} exists`);
         }
       } catch (tableError) {
         console.error(`❌ Exception checking ${table} table:`, tableError.message || JSON.stringify(tableError));

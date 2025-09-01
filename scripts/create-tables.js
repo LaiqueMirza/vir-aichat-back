@@ -91,7 +91,7 @@ CREATE TABLE IF NOT EXISTS leads (
   agent_id UUID NOT NULL REFERENCES agents(agent_id) ON DELETE CASCADE,
   name VARCHAR(255),
   email VARCHAR(255) CHECK (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$'),
-  phone VARCHAR(50),
+  mobile VARCHAR(50),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );

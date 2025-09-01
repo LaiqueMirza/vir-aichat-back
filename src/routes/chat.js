@@ -20,4 +20,10 @@ router.get('/user/:userId/recent', chatController.getRecentChats);
 // Get all recent chats for admin dashboard
 router.get('/admin/recent', chatController.getAllRecentChats);
 
+// Get chat logs for a specific chat
+router.get('/logs/:chatId', chatController.getChatLogs);
+
+// Get chat history for message persistence (new endpoint)
+router.get('/history/:chatId', chatController.getChatHistory);
+
 module.exports = router;

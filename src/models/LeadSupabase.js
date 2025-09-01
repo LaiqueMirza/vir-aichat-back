@@ -23,37 +23,41 @@ const create = async (agent_id, name = null, mobile = null, email = null) => {
 }
 
 // Get lead by ID
-const getById = async (id) => {
-  try {
-    const { data, error } = await getSupabaseClient()
-      .from('leads')
-      .select(`
+const getById = async (
+	id,
+	select = `
         *,
         agents!leads_agent_id_fkey (name)
-      `)
-      .eq('lead_id', id)
-      .single();
-    
-    if (error) throw error;
-    
-    // Format the response to match the expected structure
-    if (data) {
-      return {
-        ...data,
-        agent_name: data.agents?.name
-      };
-    }
-    
-    return null;
-  } catch (error) {
-    throw error;
-  }
-}
+      `
+) => {
+	try {
+		const { data, error } = await getSupabaseClient()
+			.from("leads")
+			.select(select)
+			.eq("lead_id", id)
+			.single();
+
+		if (error) throw error;
+
+		// Format the response to match the expected structure
+		if (data) {
+			return data;
+		}
+
+		return null;
+	} catch (error) {
+		throw error;
+	}
+};
 
 // Update lead information
 const update = async (id, updates) => {
   try {
-    const allowedFields = ['name', 'phone', 'email', 'follow_up_date', 'status', 'notes', 'company', 'source_conversation_id'];
+    const allowedFields = [
+			"name",
+			"mobile",
+			"email",
+		];
     const filteredUpdates = {};
     
     // Only include allowed fields in the update
@@ -155,11 +159,13 @@ const deleteLead = async (id) => {
 const search = async (agentId, query) => {
   try {
     const { data, error } = await getSupabaseClient()
-      .from('leads')
-      .select('*')
-      .eq('agent_id', agentId)
-      .or(`name.ilike.%${query}%,email.ilike.%${query}%,phone.ilike.%${query}%,company.ilike.%${query}%`)
-      .order('created_at', { ascending: false });
+			.from("leads")
+			.select("*")
+			.eq("agent_id", agentId)
+			.or(
+				`name.ilike.%${query}%,email.ilike.%${query}%,mobile.ilike.%${query}%,company.ilike.%${query}%`
+			)
+			.order("created_at", { ascending: false });
     
     if (error) throw error;
     return data;

@@ -36,7 +36,6 @@ const startServer = async () => {
   try {
     // Test database connection
     try {
-      console.log('🔄 Testing Supabase connection...');
       const connectionSuccess = await testConnection();
       if (!connectionSuccess) {
         console.warn('⚠️ Database connection failed, but continuing startup');
@@ -47,7 +46,6 @@ const startServer = async () => {
     
     // Initialize database tables
     try {
-      console.log('🔄 Initializing database tables...');
       await initializeTables();
     } catch (tableError) {
       console.warn('⚠️ Table initialization issue, but continuing startup:', tableError.message);
