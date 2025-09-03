@@ -2,6 +2,7 @@ const { getSupabaseClient } = require('../config/supabase');
 const ragService = require('../services/ragService');
 const embeddingsService = require('../services/embeddingsService');
 const costService = require('../services/costService');
+const elevenLabsService = require('../services/elevenLabsService');
 const ChatSupabase = require('../models/ChatSupabase');
 const Chat = require('../models/Chat');
 const AgentSupabase = require("../models/AgentSupabase");
@@ -84,7 +85,7 @@ const getChatHistory = async (req, res) => {
 // Send a message and get AI response
 const sendMessage = async (req, res) => {
     try {
-			const { message, sender, chat_id, agent_id } = req.body;
+			const { message, sender, chat_id, agent_id, requestAudio } = req.body;
 
 			if (!message) {
 				return res.status(400).json({
@@ -173,10 +174,27 @@ const sendMessage = async (req, res) => {
 				total_cost,
 			});
 
+			// Generate audio if requested
+			let audioData = null;
+			if (requestAudio && elevenLabsService.isConfigured()) {
+				try {
+					console.log('🎵 Generating TTS audio for response');
+					const audioBuffer = await elevenLabsService.textToSpeech(aiResponse.response);
+					audioData = audioBuffer.toString('base64');
+					console.log('✅ TTS audio generated successfully');
+				} catch (ttsError) {
+					console.error('❌ TTS generation failed:', ttsError.message);
+					// Continue without audio - don't fail the entire request
+				}
+			} else if (requestAudio && !elevenLabsService.isConfigured()) {
+				console.warn('⚠️ TTS requested but ElevenLabs not configured');
+			}
+
 			res.json({
 				success: true,
 				data: {
 					response: aiResponse.response,
+					audio: audioData,
 					tokensUsed: {
 						ai: aiResponse.tokenUsage?.totalTokens || 0,
 						embedding: embeddingTokens,
