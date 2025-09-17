@@ -60,18 +60,25 @@ const createRagPrompt = async (
 	context,
 	formattedChatHistory,
 	question,
-	leadInfo
+	leadInfo,
+	requestAudio = false
 ) => {
 	// Pre-build missing info array for better performance
 	const missingInfo = [];
-	if (!leadInfo?.name) missingInfo.push('- name');
-	if (!leadInfo?.mobile) missingInfo.push('- Mobile number');
-	if (!leadInfo?.email) missingInfo.push('- Email address');
-	
-	const leadInfoSection = missingInfo.length > 0 
-		? `\n\nAt the end of the response ask user question to naturally collect any one of the below user information make sure the question is in a separate line and is highlighted:\n${missingInfo.join('\n')}\n`
-		: '';
+	if (!leadInfo?.name) missingInfo.push("- name");
+	if (!leadInfo?.mobile) missingInfo.push("- Mobile number");
+	if (!leadInfo?.email) missingInfo.push("- Email address");
 
+	const leadInfoSection =
+		missingInfo.length > 0
+			? `\n\nAt the end of the response ask user question to naturally collect any one of the below user information make sure the question is in a separate line and is highlighted:\n${missingInfo.join(
+					"\n"
+			  )}\n`
+			: "";
+
+	const audioResponse = requestAudio
+		? "7. This will be delivered as an audio response, so keep the response as brief and to the point as possible. Include only the essential content needed to answer the question, avoiding unnecessary details or repetition"
+		: "";
 	try {
 		// Build the prompt step by step for clarity
 		const prompt = `
@@ -88,6 +95,7 @@ ${agentDescription}
 4. Maintain a **professional, friendly, and approachable tone**.  
 5. Keep responses **clear, concise, and directly relevant** to the user’s question.  
 6. When helpful, **summarize and structure your answers** (e.g., bullet points, steps).  
+${audioResponse}
 
 ### Context  
 ${context}
@@ -207,6 +215,140 @@ try {
 	} catch (error) {
 		console.error("❌ Error generating RAG response:", error.message);
 		throw error;
+	}
+};
+
+// Generate streaming response for WebSocket
+const getStreamingResponse = async function* (
+	agent,
+	question,
+	relevantContent,
+	chatHistory = [],
+	leadInfo = {},
+	requestAudio = false
+) {
+	try {
+		console.log("🚀 Starting getStreamingResponse function");
+
+		// Check if OpenAI is configured
+		if (!gpt4o || !gpt4oMini) {
+			console.warn("⚠️ OpenAI not configured - returning fallback response");
+			yield {
+				choices: [
+					{
+						delta: {
+							content:
+								"I'm sorry, but I'm currently unable to process your request as the AI service is not configured. Please contact the administrator.",
+						},
+					},
+				],
+			};
+			return;
+		}
+
+		console.log("✅ OpenAI models are configured");
+
+		// Prepare context from relevant content
+		const context =
+			relevantContent.length > 0
+				? relevantContent.map((item) => item.content).join("\n\n")
+				: "No specific context found in the knowledge base.";
+
+		console.log("✅ Context prepared, length:", context.length);
+
+		// Prepare chat history
+		const formattedChatHistory = chatHistory
+			.map((msg) => `${msg.role}: ${msg.message}`)
+			.join("\n");
+
+		console.log(
+			"✅ Chat history prepared, length:",
+			formattedChatHistory.length
+		);
+
+		// Create the prompt
+		const prompt = await createRagPrompt(
+			agent.name,
+			agent.description,
+			context,
+			formattedChatHistory,
+			question,
+			leadInfo,
+			requestAudio
+		);
+
+		console.log("✅ Prompt created, length:", prompt.length);
+
+		// Write prompt to file for debugging
+		try {
+			fs.writeFileSync("prompt.txt", prompt);
+			console.log("✅ Prompt written to prompt.txt successfully");
+		} catch (error) {
+			console.error("❌ Error writing prompt to file:", error.message);
+		}
+
+		// Determine which model to use based on complexity
+		const model = shouldUseGPT4o(question, context) ? gpt4o : gpt4oMini;
+		const modelName = model === gpt4o ? "gpt-4o" : "gpt-4o-mini";
+
+		console.log(`🧠 Using model: ${modelName}`);
+
+		// Generate streaming response using LangChain's streaming API
+		console.log("🤖 Creating stream with model...");
+
+		const stream = await model.stream(prompt, {
+			temperature: 0.7,
+			maxTokens: 1000,
+		});
+
+		console.log("✅ Stream created successfully");
+		console.log("🔄 Starting to process LangChain stream chunks...");
+
+		let chunkCount = 0;
+
+		// Yield chunks as they come
+		for await (const chunk of stream) {
+			chunkCount++;
+			console.log(
+				`📥 Raw LangChain chunk #${chunkCount}:`,
+				JSON.stringify(chunk, null, 2)
+			);
+
+			if (chunk && chunk.length > 0) {
+				console.log(`✅ Yielding chunk #${chunkCount} with:`, chunk);
+				yield {
+					choices: [
+						{
+							delta: {
+								content: chunk,
+							},
+						},
+					],
+				};
+			} else {
+				console.log(
+					`⚠️ Chunk #${chunkCount} has no content property or empty content`
+				);
+			}
+		}
+
+		console.log(
+			`🏁 LangChain streaming completed. Total chunks processed: ${chunkCount}`
+		);
+	} catch (error) {
+		console.error("❌ Error generating RAG streaming response:", error.message);
+		console.error("❌ Error stack:", error.stack);
+		yield {
+			choices: [
+				{
+					delta: {
+						content:
+							"I'm sorry, an error occurred while processing your request. Please try again.",
+					},
+				},
+			],
+		};
+		// Don't throw error here, just yield the error message
 	}
 };
 
@@ -359,6 +501,7 @@ Summary:`;
 
 module.exports = {
 	generateResponse,
+	getStreamingResponse,
 	extractLeadInfo,
 	shouldUseGPT4o,
 	cleanName,

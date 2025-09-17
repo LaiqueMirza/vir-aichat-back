@@ -94,6 +94,7 @@ const sendMessage = async (req, res) => {
 				});
       }
 
+      // the below is a dummy response for testing purposes, so that we don't incur costs while developing the frontend
       // return res.json({
 			// 	success: true,
 			// 	data: {
