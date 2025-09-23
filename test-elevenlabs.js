@@ -3,22 +3,18 @@ const elevenLabsService = require('./src/services/elevenLabsService');
 
 async function testElevenLabsTTS() {
     try {
-        console.log('🚀 Starting ElevenLabs TTS test...');
-        console.log('📝 Text to convert:', "Based on the documents provided as context");
         
         // Test the textToSpeechStream method
         const audioData = await elevenLabsService.textToSpeechStream(
-            "Based on the documents provided as context"
-        );
+					"Also could you please share your name"
+				);
         
         if (audioData) {
-            console.log('✅ TTS Success!');
             console.log('📊 Audio data:', audioData);
-            console.log('📏 Audio data length:', audioData.length);
-            console.log('🎵 First 100 characters of base64:', audioData.substring(0, 100));
-            console.log('💾 Audio size estimate:', Math.round(audioData.length / 1024), 'KB');
-            
-            // Verify it's valid base64
+            // write the audio data as a textfile to a file for inspection
+            const fs = require('fs');
+            fs.writeFileSync('output_audio.txt', audioData);
+            console.log('✅ Audio written to output_audio.txt');
             try {
                 Buffer.from(audioData, 'base64');
                 console.log('✅ Valid base64 format confirmed');
@@ -35,9 +31,6 @@ async function testElevenLabsTTS() {
     }
 }
 
-// Check if ElevenLabs is configured
-console.log('🔧 Checking ElevenLabs configuration...');
-console.log('✓ API Key configured:', elevenLabsService.isConfigured() ? 'Yes' : 'No');
 
 if (!elevenLabsService.isConfigured()) {
     console.log('⚠️  ElevenLabs API key not found. Please check your .env file for ELEVENLABS_API_KEY');

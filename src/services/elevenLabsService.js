@@ -126,13 +126,6 @@ class ElevenLabsService {
 				},
 				output_format: "mp3_44100_128", // Optimized format for streaming
 			};
-
-			console.log(
-				`🎵 Streaming TTS for: "${cleanedText.substring(0, 30)}${
-					cleanedText.length > 30 ? "..." : ""
-				}"`
-			);
-
 			const response = await axios({
 				method: "POST",
 				url: `${this.baseUrl}/text-to-speech/${targetVoiceId}`,
@@ -148,10 +141,6 @@ class ElevenLabsService {
 
 			// Convert to base64 for streaming
 			const audioBase64 = Buffer.from(response.data).toString("base64");
-
-			console.log(
-				`✅ TTS chunk generated: ${Math.round(audioBase64.length / 1024)}KB`
-			);
 			return audioBase64;
 		} catch (error) {
 			console.error(`❌ Error in streaming TTS: ${error.message}`);

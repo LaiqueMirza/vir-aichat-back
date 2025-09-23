@@ -112,74 +112,18 @@ const searchRelevantContent = async (agentId, query, leadId = null, limit = 3, t
       let totalTokens = 0;
       let totalCost = 0;
       
-      // Extract user information using AI-based analysis with fallback to regex
-      let userInfo = await extractUserInfoWithAI(query);
-      
-      // Add AI extraction costs if userInfo contains cost data
-      if (userInfo && userInfo.tokenUsage) {
-        totalTokens += userInfo.tokenUsage.totalTokens || 0;
-        totalCost += userInfo.cost || 0;
-      }
-      
-      // Fallback to regex extraction if AI extraction fails
-      if (!userInfo) {
-        userInfo = extractUserInfoRegex(query);
-      }
-      
-      // If we have user info and a leadId, update the lead
-      if (leadId && (userInfo.name || userInfo.email || userInfo.mobile)) {
-        try {
-// Get the existing lead to check if it exists
-const existingLead = await LeadSupabase.getById(leadId);
-
-if (!existingLead) {
-  console.warn(`⚠️ Lead ${leadId} not found for update`);
-  return;
-}
-
-// Merge existing lead data with new user info
-const updatedLeadData = {
-  name: userInfo.name || existingLead.name,
-  email: userInfo.email || existingLead.email, 
-  mobile: userInfo.mobile || existingLead.mobile
-};
-					await LeadSupabase.update(leadId, updatedLeadData);
-					console.log(
-						`📝 Updated lead ${leadId} with extracted info:`,
-						userInfo
-					);
-				} catch (leadError) {
-					console.error(
-						"❌ Error updating lead with extracted info:",
-						leadError.message
-					);
-				}
-			}
-      
-      if (!embeddings) {
-        console.warn('⚠️ Skipping content search - OpenAI not configured');
-        return {
-          results: [],
-          tokenUsage: { totalTokens },
-          cost: totalCost
-        };
-      }
-      
-      // Calculate embedding tokens and cost
+      // Calculate embedding tokens and cost - fast operations only
       const embeddingTokens = tokenCounter.countEmbeddingTokens(query);
       const embeddingCost = calculateEmbeddingCost(embeddingTokens);
       
       totalTokens += embeddingTokens;
       totalCost += embeddingCost;
       
-      // Generate query embedding
+      // Generate query embedding - essential for context
       const queryEmbedding = await embeddings.embedQuery(query);
       
-      // Search similar embeddings
+      // Search similar embeddings - essential for context
       const results = await searchSimilarEmbeddings(agentId, queryEmbedding, limit, threshold);
-      
-      console.log(`📋 Found ${results.length} relevant chunks`);
-      console.log(`💰 Embedding tokens: ${embeddingTokens}, cost: $${embeddingCost.toFixed(6)}`);
       
       const mappedResults = results.map(result => ({
         content: result.content,
@@ -193,7 +137,6 @@ const updatedLeadData = {
         cost: totalCost, 
       };
     } catch (error) {
-      console.error('❌ Error searching relevant content:', error.message);
       throw error;
     }
 }
