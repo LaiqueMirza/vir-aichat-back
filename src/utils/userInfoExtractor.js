@@ -73,7 +73,7 @@ const extractUserInfoWithAI = async (query) => {
 
 Text to analyze: "${query}"
 
-Return only a valid JSON object with the following structure:
+Return only a valid JSON object with the following structure even if you don't find any info, use null for missing fields:
 {
   "name": "string or null",
   "email": "string or null",

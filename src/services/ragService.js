@@ -66,7 +66,7 @@ const createRagPrompt = async (
 
 
 	const audioResponse = requestAudio
-		? "7. This will be delivered as an audio response, so keep the response as brief and to the point as possible. Include only the essential content needed to answer the question, avoiding unnecessary details or repetition"
+		? "7. This response will be delivered to the user as live audio in a conversational format. Keep it concise, direct, and natural-sounding, including only the essential information required to answer the question. Avoid unnecessary details, filler words, or repetition to ensure a smooth and engaging conversational flow."
 		: "";
 	try {
 		// Build the prompt step by step for clarity
